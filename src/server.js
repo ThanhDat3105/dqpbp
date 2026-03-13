@@ -36,7 +36,12 @@ async function startServer() {
       });
     });
   } catch (error) {
-    console.error("❌ Cannot connect to PostgreSQL:", error);
+    console.error("❌ Cannot connect to PostgreSQL:", {
+      message: error.message,
+      code: error.code,
+      host: error.host,
+      port: error.port,
+    });
     process.exit(1);
   }
 }
