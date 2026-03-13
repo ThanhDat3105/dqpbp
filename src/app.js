@@ -54,12 +54,6 @@ app.use(
   }),
 );
 
-// CRON JOBS
-if (process.env.NODE_ENV === "production") {
-  const initCron = require("./cron");
-  initCron();
-}
-
 // HEALTH CHECK
 app.get("/health", (req, res) => {
   res.status(200).json({
