@@ -1,8 +1,13 @@
 const activityService = require("../services/activity.service");
+const pick = require("../utils/pick");
 
-const getActivities = async (req, res) => {
+const getActivities = async (req, res, user) => {
   try {
-    const data = await activityService.getActivities();
+    console.log(req.headers.authorization);
+
+    const filter = pick(req.query, ["month", "year"]);
+    const option = pick(req.query, ["page", "limit"]);
+    const data = await activityService.getActivities(filter, option);
     res.json({
       status: true,
       data,

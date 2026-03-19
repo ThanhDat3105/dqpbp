@@ -1,37 +1,78 @@
-const Joi = require("joi");
-const pick = require("../utils/pick");
-
 const { cleanupFile } = require("./cleanupFile.middleware");
 
-const validate = (schema) => (req, res, next) => {
-  const validSchema = pick(schema, ["params", "query", "body"]);
-  const object = pick(req, Object.keys(validSchema));
-  const { value, error } = Joi.compile(validSchema)
-    .prefs({ errors: { label: "key" }, abortEarly: false })
-    .validate(object);
+const tryParseJSON = (value) => {
+  if (typeof value === "string") {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  return value;
+};
 
-  if (error) {
-    // Cleanup files if validation fails
-    if (req.file) cleanupFile(req.file.path);
+const validate = (schema) => (req, res, next) => {
+  const options = {
+    abortEarly: false,
+    errors: { label: "key" },
+    allowUnknown: true,
+  };
+
+  // 🔥 AUTO PARSE BODY (fix assignees lỗi)
+  if (req.body) {
+    Object.keys(req.body).forEach((key) => {
+      req.body[key] = tryParseJSON(req.body[key]);
+    });
+  }
+
+  const validateField = (field, data) => {
+    if (!schema[field]) return { value: data };
+    return schema[field].validate(data, options);
+  };
+
+  const queryValidation = validateField("query", req.query);
+  const bodyValidation = validateField("body", req.body);
+  const paramsValidation = validateField("params", req.params);
+
+  const allErrors = [
+    queryValidation.error,
+    bodyValidation.error,
+    paramsValidation.error,
+  ].filter(Boolean);
+
+  if (allErrors.length > 0) {
+    const files = [];
+
+    if (req.file) files.push(req.file);
+
     if (req.files) {
       if (Array.isArray(req.files)) {
-        req.files.forEach((file) => cleanupFile(file.path));
+        files.push(...req.files);
       } else {
-        Object.values(req.files).forEach((fileArray) => {
-          if (Array.isArray(fileArray)) {
-            fileArray.forEach((file) => cleanupFile(file.path));
-          }
+        Object.values(req.files).forEach((arr) => {
+          if (Array.isArray(arr)) files.push(...arr);
         });
       }
     }
 
-    const errorMessage = error.details
-      .map((details) => details.message)
+    files.forEach((file) => cleanupFile(file.path));
+
+    const errorMessage = allErrors
+      .flatMap((err) => err.details)
+      .map((detail) => detail.message)
       .join(", ");
-    return res.status(400).json({ status: false, message: errorMessage }); //next(new ApiError(httpStatus.OK, errorMessage));
+
+    return res.status(400).json({
+      status: false,
+      message: errorMessage,
+    });
   }
-  Object.assign(req, value);
-  return next();
+
+  if (queryValidation.value) req.query = queryValidation.value;
+  if (bodyValidation.value) req.body = bodyValidation.value;
+  if (paramsValidation.value) req.params = paramsValidation.value;
+
+  next();
 };
 
 module.exports = validate;

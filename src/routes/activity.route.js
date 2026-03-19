@@ -4,9 +4,16 @@ const activityController = require("../controllers/activity.controller");
 const validate = require("../middlewares/validate");
 const { activityValidation } = require("../validations");
 const { uploadDocument } = require("../config/multer.config");
+const { authentication } = require("../middlewares/auth.middleware");
 
-router.get("/", activityController.getActivities);
+router.get(
+  "/",
+  validate(activityValidation.getActivities),
+  activityController.getActivities,
+);
+
 router.get("/:id", activityController.getActivityById);
+
 router.post(
   "/",
   uploadDocument.single("attached_files"),
