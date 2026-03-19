@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { NotFoundError } = require("../core/error.response");
 const paginate = require("../plugins/paginate.plugin");
 
 const getActivities = async (filter, option) => {
@@ -50,9 +51,28 @@ const getActivities = async (filter, option) => {
 };
 
 const getActivityById = async (id) => {
-  const result = await pool.query("SELECT * FROM activities WHERE id = $1", [
-    id,
-  ]);
+  const result = await pool.query(
+    `
+    SELECT 
+      a.*,
+      COALESCE(
+        json_agg(to_jsonb(t))
+        FILTER (WHERE t.id IS NOT NULL),
+        '[]'
+      ) AS tasks
+    FROM activities a
+    LEFT JOIN activity_tasks t 
+      ON a.id = t.activity_id
+    WHERE a.id = $1
+    GROUP BY a.id
+    `,
+    [id],
+  );
+
+  if (result.rows.length === 0) {
+    throw new NotFoundError("Activity not found");
+  }
+
   return result.rows[0];
 };
 
