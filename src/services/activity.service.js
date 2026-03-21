@@ -1,5 +1,5 @@
 const pool = require("../config/db");
-const { NotFoundError } = require("../core/error.response");
+const { NotFoundError, BadRequestError } = require("../core/error.response");
 const paginate = require("../plugins/paginate.plugin");
 
 const getActivities = async (filter, option) => {
@@ -89,10 +89,29 @@ const createActivity = async (activityData) => {
     created_by,
     created_at,
     updated_at,
+    tasks = [],
   } = activityData;
 
-  const result = await pool.query(
-    "INSERT INTO activities (name, work_type, department, start_date, end_date, location, document_number, attached_files, created_by, created_at, updated_at, tasks) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *",
+  const start = new Date(start_date);
+  const end = new Date(end_date);
+
+  if (start > end) {
+    throw new BadRequestError(
+      "start_date must be less than or equal to end_date",
+    );
+  }
+
+  // 1. Insert activity
+  const activityResult = await pool.query(
+    `
+      INSERT INTO activities (
+        name, work_type, department, start_date, end_date,
+        location, document_number, attached_files,
+        created_by, created_at, updated_at
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      RETURNING *;
+      `,
     [
       name,
       work_type,
@@ -102,14 +121,53 @@ const createActivity = async (activityData) => {
       location,
       document_number,
       attached_files ? JSON.stringify(attached_files) : null,
-      tasks ? JSON.stringify(tasks) : null,
       created_by,
       created_at,
       updated_at,
     ],
   );
 
-  return result.rows[0];
+  const activity = activityResult.rows[0];
+
+  if (tasks.length > 0) {
+    for (const task of tasks) {
+      await pool.query(
+        `
+          INSERT INTO activity_tasks (
+            activity_id,
+            title,
+            team,
+            assignees,
+            status,
+            completed,
+            due_date,
+            notes,
+            report_fields,
+            accepted_at,
+            created_at,
+            updated_at
+          )
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          `,
+        [
+          activity.id,
+          task.title,
+          task.team,
+          task.assignees,
+          task.status || "pending",
+          task.completed || false,
+          task.due_date,
+          task.notes || null,
+          JSON.stringify(task.reportFields || []),
+          task.accepted_at || null,
+          task.created_at,
+          task.updated_at,
+        ],
+      );
+    }
+  }
+
+  return activity;
 };
 
 const updateStatusActivity = async (id, status) => {
@@ -117,6 +175,7 @@ const updateStatusActivity = async (id, status) => {
     "UPDATE activities SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *",
     [status, id],
   );
+
   return result.rows[0];
 };
 

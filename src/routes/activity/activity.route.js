@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const activityController = require("../controllers/activity.controller");
-const validate = require("../middlewares/validate");
-const { activityValidation } = require("../validations");
-const { uploadDocument } = require("../config/multer.config");
-const { authentication } = require("../middlewares/auth.middleware");
+const activityController = require("../../controllers/activity.controller");
+const validate = require("../../middlewares/validate");
+const { activityValidation } = require("../../validations");
+const { uploadDocument } = require("../../config/multer.config");
+const { authentication } = require("../../middlewares/auth.middleware");
 
 router.get(
   "/",

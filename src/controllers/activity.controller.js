@@ -1,40 +1,82 @@
-const { SuccessResponse } = require("../core/success.response");
-const { ErrorResponse } = require("../core/error.response");
-const activityService = require("../services/activity.service");
-const pick = require("../utils/pick");
+const AuthService = require("../services/auth.service");
+const { CREATED, SUCCESS } = require("../core/success.response");
+const { BadRequestError } = require("../core/error.response");
 
-const getActivities = async (req, res, next) => {
+// 🔐 Register
+const signup = async (req, res, next) => {
   try {
-    const filter = pick(req.query, ["month", "year"]);
-    const option = pick(req.query, ["page", "limit"]);
-    const data = await activityService.getActivities(filter, option);
-    return new SuccessResponse({
-      message: "Activities retrieved successfully",
-      metaData: data,
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      throw new BadRequestError("Missing required fields");
+    }
+
+    const result = await AuthService.signup(req.body);
+
+    return new CREATED({
+      message: "User registered successfully",
+      metaData: result,
     }).send(res);
   } catch (error) {
     next(error);
   }
 };
 
-const getActivityById = async (req, res, next) => {
+// 🔑 Login
+const login = async (req, res, next) => {
   try {
-    const data = await activityService.getActivityById(req.params.id);
-    return new SuccessResponse({
-      message: "Activity retrieved successfully",
-      metaData: data,
+    const { username, password } = req.body;
+
+    if (!username || !password) {
+      throw new BadRequestError("Missing username or password");
+    }
+
+    const result = await AuthService.login(username, password);
+
+    return new SUCCESS({
+      message: "Login successful",
+      metaData: result,
     }).send(res);
   } catch (error) {
     next(error);
   }
 };
 
-const createActivity = async (req, res, next) => {
+// 🚪 Logout
+const logout = async (req, res, next) => {
   try {
-    const data = await activityService.createActivity(req.body);
-    return new SuccessResponse({
-      message: "Activity created successfully",
-      metaData: data,
+    const userId = req.user?.id;
+    const accessToken = req.token;
+
+    await AuthService.logout(userId, accessToken);
+
+    return new SUCCESS({
+      message: "Logout successful",
+      metaData: { success: true },
+    }).send(res);
+  } catch (error) {
+    // Theo requirement: luôn trả success
+    return new SUCCESS({
+      message: "Logout successful",
+      metaData: { success: true },
+    }).send(res);
+  }
+};
+
+// 🔄 Refresh token
+const refreshToken = async (req, res, next) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      throw new BadRequestError("Refresh token is required");
+    }
+
+    const result = await AuthService.refreshToken(refreshToken);
+
+    return new SUCCESS({
+      message: "Tokens refreshed successfully",
+      metaData: result,
     }).send(res);
   } catch (error) {
     next(error);
@@ -42,7 +84,8 @@ const createActivity = async (req, res, next) => {
 };
 
 module.exports = {
-  getActivities,
-  createActivity,
-  getActivityById,
+  signup,
+  login,
+  logout,
+  refreshToken,
 };

@@ -23,7 +23,11 @@ const createActivity = {
           title: Joi.string().max(255).required(),
           team: Joi.string().max(100).required(),
           assignees: Joi.array().items(Joi.string()).required(),
-          dueDate: Joi.string().required(),
+          status: Joi.string()
+            .valid("pending", "in_progress", "completed")
+            .default("pending"),
+          completed: Joi.boolean().default(false),
+          due_date: Joi.string().required(),
           notes: Joi.string().allow("", null),
           reportFields: Joi.array().items(
             Joi.object({
