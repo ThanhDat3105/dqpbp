@@ -19,7 +19,16 @@ const paginate = async ({
   // FILTER
   Object.entries(filter).forEach(([key, value]) => {
     if (value !== undefined) {
-      whereClauses.push(`${key} = $${index}`);
+      if (key.endsWith("_from")) {
+        const field = key.replace("_from", "");
+        whereClauses.push(`${field} >= $${index}`);
+      } else if (key.endsWith("_to")) {
+        const field = key.replace("_to", "");
+        whereClauses.push(`${field} < $${index}`);
+      } else {
+        whereClauses.push(`${key} = $${index}`);
+      }
+
       values.push(value);
       index++;
     }

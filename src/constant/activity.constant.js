@@ -1,7 +1,5 @@
 const WORK_TYPE = {
-  SECURITY: "Security",
-  EDUCATION: "Education",
-  TRAINING: "Training",
+  ACTIVITY: "activity",
 };
 
 module.exports = {
