@@ -10,9 +10,11 @@ class CalendarService {
    * @returns {object} JSON map of dates to task/activity arrays
    */
   async getCalendarData(month, user) {
+    const targetMonth = month || moment().format("YYYY-MM");
+
     // 1. Parse month to start and end date of that month
-    const startDate = moment(`${month}-01`).startOf("month").format("YYYY-MM-DD");
-    const endDate = moment(`${month}-01`).endOf("month").format("YYYY-MM-DD");
+    const startDate = moment(`${targetMonth}-01`).startOf("month").format("YYYY-MM-DD");
+    const endDate = moment(`${targetMonth}-01`).endOf("month").format("YYYY-MM-DD");
 
     const role = user.role; // role is DB-sourced via auth middleware — never from frontend
     const currentUserId = user.user_id?.toString() || user.id?.toString();
