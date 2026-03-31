@@ -1,6 +1,7 @@
 "use strict";
 
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 
 const SALT_ROUNDS = 12;
 
@@ -23,4 +24,7 @@ const comparePassword = async (password, hash) => {
   return bcrypt.compare(password, hash);
 };
 
-module.exports = { hashPassword, comparePassword };
+const hashToken = (token) =>
+  crypto.createHash("sha256").update(token).digest("hex");
+
+module.exports = { hashPassword, comparePassword, hashToken };

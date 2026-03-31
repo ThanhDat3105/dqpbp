@@ -1,6 +1,7 @@
 "use strict";
 
 const { CREATED, SuccessResponse } = require("../core/success.response");
+const { NotFoundError, ForbiddenError } = require("../core/error.response");
 const authService = require("../services/auth.service");
 
 /**
@@ -64,4 +65,27 @@ const logout = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, refreshToken, logout };
+/**
+ * GET /api/auth/me
+ * Returns the authenticated user's public profile.
+ * Requires: authentication middleware (sets req.user)
+ */
+const getMe = async (req, res, next) => {
+  try {
+    const user = await authService.getMe(req.user.user_id);
+
+    // Middleware already confirmed is_active, but guard against race conditions
+    if (!user) {
+      return next(new ForbiddenError("Account not found or has been deactivated"));
+    }
+
+    return new SuccessResponse({
+      message: "User profile retrieved successfully",
+      metaData: user,
+    }).send(res);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { register, login, refreshToken, logout, getMe };

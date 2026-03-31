@@ -1,10 +1,10 @@
 const express = require("express");
 const router = express.Router();
 
-const activityRoute = require("./activity.route");
-const activityTaskRoute = require("./activity_tasks.route");
-const calendarRoute = require("./calendar.route");
-const authRoute = require("./auth.route");
+const activityRoute = require("./activity");
+const activityTaskRoute = require("./activityTask");
+const calendarRoute = require("./calendar");
+const authRoute = require("./auth");
 
 router.use("/activities", activityRoute);
 router.use("/activities-task", activityTaskRoute);

@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const calendarController = require("../controllers/calendar.controller");
-const validate = require("../middlewares/validate");
-const { getCalendar } = require("../validations/calendar.validation");
-const { authentication } = require("../middlewares/auth.middleware");
+const calendarController = require("../../controllers/calendar.controller");
+const validate = require("../../middlewares/validate");
+const { getCalendar } = require("../../validations/calendar.validation");
+const { authentication } = require("../../middlewares/auth.middleware");
 
 // GET /api/calendar?month=YYYY-MM
 router.get(

@@ -1,23 +1,24 @@
 "use strict";
 
 const pool = require("../config/db");
-const { hashPassword, comparePassword } = require("../utils/hash");
-const { signAccessToken, signRefreshToken, verifyRefreshToken } = require("../utils/jwt");
+const { hashPassword, comparePassword, hashToken } = require("../utils/hash");
+const {
+  signAccessToken,
+  signRefreshToken,
+  verifyRefreshToken,
+  verifyAccessToken,
+} = require("../utils/jwt");
 const {
   ConflictRequestError,
   AuthFailureError,
   NotFoundError,
-  BadRequestError,
 } = require("../core/error.response");
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ─────────────────────────────────────────────────
 
-/**
- * Find a user by email (returns full row including password_hash)
- */
 const findUserByEmail = async (email) => {
   const { rows } = await pool.query(
-    `SELECT id, name, email, password_hash, role, team, is_active, last_login_at
+    `SELECT id, name, email, password_hash, role, team, is_active
      FROM users
      WHERE email = $1
      LIMIT 1`,
@@ -26,69 +27,19 @@ const findUserByEmail = async (email) => {
   return rows[0] || null;
 };
 
-/**
- * Strip sensitive fields before returning user to client
- */
-const sanitizeUser = (user) => ({
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  role: user.role,
-  team: user.team,
-  is_active: user.is_active,
-});
+// ─── AUTH ────────────────────────────────────────────────────
 
-// ─── Service Methods ──────────────────────────────────────────────────────────
-
-/**
- * Register a new user
- */
-const register = async ({ name, email, password, team, role, phone, address }) => {
-  // 1. Check for duplicate email
-  const existing = await findUserByEmail(email);
-
-  if (existing) {
-    throw new ConflictRequestError("Email is already registered");
-  }
-
-  // 2. Hash password
-  const password_hash = await hashPassword(password);
-
-  // 3. Insert user
-  const { rows } = await pool.query(
-    `INSERT INTO users
-       (name, email, password_hash, team, role, phone, address,
-        is_active, created_at, updated_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW(), NOW())
-     RETURNING id, name, email, role, team, is_active, created_at`,
-    [name, email, password_hash, team, role, phone || null, address || null]
-  );
-
-  return { user: rows[0] };
-};
-
-/**
- * Login with email + password
- */
 const login = async ({ email, password }) => {
-  // 1. Lookup user -- use a generic error to prevent user enumeration
   const user = await findUserByEmail(email);
-  if (!user) {
-    throw new AuthFailureError("Invalid credentials");
-  }
+  if (!user) throw new AuthFailureError("Invalid credentials");
 
-  // 2. Check active status
   if (!user.is_active) {
-    throw new AuthFailureError("Your account has been deactivated");
+    throw new AuthFailureError("Account deactivated");
   }
 
-  // 3. Verify password
   const isMatch = await comparePassword(password, user.password_hash);
-  if (!isMatch) {
-    throw new AuthFailureError("Invalid credentials");
-  }
+  if (!isMatch) throw new AuthFailureError("Invalid credentials");
 
-  // 4. Build JWT payload (NEVER trust role from frontend)
   const payload = {
     user_id: user.id,
     email: user.email,
@@ -98,25 +49,31 @@ const login = async ({ email, password }) => {
   const access_token = signAccessToken(payload);
   const refresh_token = signRefreshToken({ user_id: user.id });
 
-  // 5a. Update last_login_at
-  await pool.query(
-    `UPDATE users SET last_login_at = NOW(), updated_at = NOW() WHERE id = $1`,
-    [user.id]
-  );
+  // 🔥 HASH TOKEN
+  const accessHash = hashToken(access_token);
+  const refreshHash = hashToken(refresh_token);
 
-  // 5b. Persist refresh token (separate query — pg rejects multi-statement prepared statements)
+  // 🔥 Lưu access token
   await pool.query(
     `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
-    VALUES ($1, $2, 'refresh', false, NOW(), NOW() + INTERVAL '7 days')
-    ON CONFLICT (token_hash) DO NOTHING`,
-    [user.id, refresh_token]
+     VALUES ($1, $2, 'access', false, NOW(), NOW() + INTERVAL '1 hour')
+     ON CONFLICT (token_hash)
+     DO UPDATE SET 
+       revoked = EXCLUDED.revoked,
+       expires_at = EXCLUDED.expires_at`,
+    [user.id, accessHash]
+  );
+
+  // 🔥 Lưu refresh token
+  await pool.query(
+    `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
+     VALUES ($1, $2, 'refresh', false, NOW(), NOW() + INTERVAL '7 days')
+     ON CONFLICT (token_hash) DO NOTHING`,
+    [user.id, refreshHash]
   );
 
   return {
-    token: {
-      access_token,
-      refresh_token,
-    },
+    token: { access_token, refresh_token },
     user: {
       id: user.id,
       name: user.name,
@@ -126,11 +83,9 @@ const login = async ({ email, password }) => {
   };
 };
 
-/**
- * Refresh access token using a valid refresh token
- */
+// ─── REFRESH ─────────────────────────────────────────────────
+
 const refreshAccessToken = async (refreshToken) => {
-  // 1. Verify signature
   let decoded;
   try {
     decoded = verifyRefreshToken(refreshToken);
@@ -138,56 +93,136 @@ const refreshAccessToken = async (refreshToken) => {
     throw new AuthFailureError("Invalid or expired refresh token");
   }
 
-  // 2. Check it is not revoked
-  const { rows: blacklistRows } = await pool.query(
-    `SELECT id FROM tokens
-     WHERE token = $1 AND type = 'refresh' AND revoked = true
-     LIMIT 1`,
-    [refreshToken]
-  );
-  if (blacklistRows.length > 0) {
-    throw new AuthFailureError("Refresh token has been revoked");
-  }
+  const userId = decoded.user_id;
+  const refreshHash = hashToken(refreshToken);
 
-  // 3. Load fresh user data (role might have changed)
+  // 🔥 check refresh token
   const { rows } = await pool.query(
-    `SELECT id, email, role, is_active FROM users WHERE id = $1 LIMIT 1`,
-    [decoded.user_id]
+    `SELECT revoked FROM tokens
+     WHERE token_hash = $1 AND type = 'refresh'
+     LIMIT 1`,
+    [refreshHash]
   );
-  const user = rows[0];
-  if (!user || !user.is_active) {
-    throw new AuthFailureError("Account not found or deactivated");
+
+  if (rows.length === 0) {
+    throw new AuthFailureError("Refresh token not found");
   }
 
-  // 4. Issue new access token
-  const access_token = signAccessToken({
+  if (rows[0].revoked) {
+    throw new AuthFailureError("Refresh token revoked");
+  }
+
+  // 🔥 revoke refresh cũ
+  await pool.query(
+    `UPDATE tokens SET revoked = true WHERE token_hash = $1`,
+    [refreshHash]
+  );
+
+  // 🔥 revoke ALL access token cũ
+  await pool.query(
+    `UPDATE tokens SET revoked = true 
+     WHERE user_id = $1 AND type = 'access'`,
+    [userId]
+  );
+
+  // load user
+  const { rows: userRows } = await pool.query(
+    `SELECT id, email, role, is_active 
+     FROM users WHERE id = $1 LIMIT 1`,
+    [userId]
+  );
+
+  const user = userRows[0];
+  if (!user || !user.is_active) {
+    throw new AuthFailureError("User invalid");
+  }
+
+  // 🔥 tạo token mới
+  const newAccessToken = signAccessToken({
     user_id: user.id,
     email: user.email,
     role: user.role,
   });
 
-  return { access_token };
-};
+  const newRefreshToken = signRefreshToken({
+    user_id: user.id,
+  });
 
-/**
- * Logout — blacklist the access and/or refresh token
- */
-const logout = async (token) => {
+  const accessHash = hashToken(newAccessToken);
+  const newRefreshHash = hashToken(newRefreshToken);
+
+  // 🔥 lưu access mới
   await pool.query(
-    `UPDATE tokens SET revoked = true, updated_at = NOW()
-     WHERE token = $1`,
-    [token]
+    `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
+     VALUES ($1, $2, 'access', false, NOW(), NOW() + INTERVAL '1 hour')
+     ON CONFLICT (token_hash) DO UPDATE SET revoked = false, expires_at = EXCLUDED.expires_at`,
+    [user.id, accessHash]
   );
 
-  // Also insert if not already present (handles access-token blacklist)
+  // 🔥 lưu refresh mới
   await pool.query(
-    `INSERT INTO tokens (token, type, revoked, created_at)
-     VALUES ($1, 'access', true, NOW())
-     ON CONFLICT DO NOTHING`,
-    [token]
+    `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
+     VALUES ($1, $2, 'refresh', false, NOW(), NOW() + INTERVAL '7 days')
+     ON CONFLICT (token_hash) DO NOTHING`,
+    [user.id, newRefreshHash]
+  );
+
+  return {
+    access_token: newAccessToken,
+    refresh_token: newRefreshToken,
+  };
+};
+
+// ─── LOGOUT ─────────────────────────────────────────────────
+
+const logout = async (token) => {
+  let userId = null;
+  let expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // fallback: 7d
+
+  try {
+    const decoded = verifyAccessToken(token);
+    userId = decoded.user_id;
+    expiresAt = new Date(decoded.exp * 1000);
+  } catch {
+    // Token expired or invalid — still blacklist it by hash
+    const jwtLib = require("jsonwebtoken");
+    const raw = jwtLib.decode(token);
+    if (raw) {
+      userId = raw.user_id;
+      expiresAt = raw.exp ? new Date(raw.exp * 1000) : expiresAt;
+    }
+  }
+
+  const tokenHash = hashToken(token);
+
+  await pool.query(
+    `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
+     VALUES ($1, $2, 'access', true, NOW(), $3)
+     ON CONFLICT (token_hash)
+     DO UPDATE SET revoked = true`,
+    [userId, tokenHash, expiresAt]
   );
 
   return { message: "Logged out successfully" };
 };
 
-module.exports = { register, login, refreshAccessToken, logout };
+// ─── GET ME ─────────────────────────────────────────────────
+
+const getMe = async (userId) => {
+  const { rows } = await pool.query(
+    `SELECT id, name, role, team
+     FROM users
+     WHERE id = $1 AND is_active = true
+     LIMIT 1`,
+    [userId]
+  );
+
+  return rows[0] || null;
+};
+
+module.exports = {
+  login,
+  refreshAccessToken,
+  logout,
+  getMe,
+};

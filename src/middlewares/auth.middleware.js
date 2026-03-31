@@ -3,11 +3,7 @@
 const pool = require("../config/db");
 const { verifyAccessToken } = require("../utils/jwt");
 const { AuthFailureError, NotFoundError } = require("../core/error.response");
-const crypto = require("crypto");
-
-const hashToken = (token) => {
-  return crypto.createHash("sha256").update(token).digest("hex");
-};
+const { hashToken } = require("../utils/hash");
 
 const authentication = async (req, res, next) => {
   try {
@@ -34,10 +30,8 @@ const authentication = async (req, res, next) => {
       return next(new AuthFailureError("Invalid token"));
     }
 
-    // ❗ OPTIONAL (chỉ dùng nếu bạn lưu access token vào DB)
-    // Nếu KHÔNG lưu access token → BỎ đoạn này cho nhẹ hệ thống
-    /*
-    const token_hash = hashToken(token);
+    // 🔥 BẮT BUỘC CHECK REVOKE
+    const token_hash = hashToken(token);// nếu chưa hash thì dùng trực tiếp
 
     const { rows: tokenRows } = await pool.query(
       `SELECT id FROM tokens
@@ -51,11 +45,10 @@ const authentication = async (req, res, next) => {
     if (tokenRows.length > 0) {
       return next(new AuthFailureError("Token has been revoked"));
     }
-    */
 
-    // 2. Load user từ DB (KHÔNG trust JWT role)
+    // 2. Load user
     const { rows } = await pool.query(
-      `SELECT id, email, role, is_active 
+      `SELECT *
        FROM users 
        WHERE id = $1 
        LIMIT 1`,
@@ -83,7 +76,6 @@ const authentication = async (req, res, next) => {
 
     return next();
   } catch (error) {
-    console.log(error, "auth_error");
     return next(new AuthFailureError("Authentication failed"));
   }
 };
