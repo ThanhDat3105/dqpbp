@@ -1,13 +1,16 @@
 "use strict";
 
 const Joi = require("joi");
-const { WORK_TYPE } = require("../constant/activity.constant");
+const { WORK_TYPE, WORK_GROUP } = require("../constant/activity.constant");
 
 const createActivity = {
   body: Joi.object().keys({
     name: Joi.string().required(),
     work_type: Joi.string()
       .valid(...Object.values(WORK_TYPE))
+      .required(),
+    work_group: Joi.string()
+      .valid(...Object.values(WORK_GROUP))
       .required(),
     department: Joi.string().required(),
     location: Joi.string(),

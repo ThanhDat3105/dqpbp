@@ -39,7 +39,12 @@ app.use(compression());
 app.disable("x-powered-by");
 
 // CORS CONFIG
-const appOrigin = ["https://shop-basagi.cloud", "https://shop-basagi.com"];
+const appOrigin = [
+  "https://shop-basagi.cloud",
+  "https://shop-basagi.com",
+  "http://localhost:3000",
+  "http://127.0.0.1:3000",
+];
 
 if (process.env.NODE_ENV === "development") {
   appOrigin.push("http://localhost:3000");
