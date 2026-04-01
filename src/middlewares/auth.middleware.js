@@ -48,7 +48,7 @@ const authentication = async (req, res, next) => {
 
     // 2. Load user
     const { rows } = await pool.query(
-      `SELECT *
+      `SELECT id, email, role, team, is_active 
        FROM users 
        WHERE id = $1 
        LIMIT 1`,
@@ -70,6 +70,7 @@ const authentication = async (req, res, next) => {
       user_id: user.id,
       email: user.email,
       role: user.role,
+      team: user.team,
     };
 
     req.token = token;

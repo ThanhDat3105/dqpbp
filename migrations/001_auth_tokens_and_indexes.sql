@@ -22,6 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_tokens_user_type   ON tokens(user_id, type);
 -- Calendar performance indexes (from Phase 1)
 -- ============================================================
 CREATE INDEX IF NOT EXISTS idx_tasks_due_date    ON activity_tasks(due_date);
+CREATE INDEX IF NOT EXISTS idx_tasks_team        ON activity_tasks(team);
 CREATE INDEX IF NOT EXISTS idx_tasks_activity_id ON activity_tasks(activity_id);
 CREATE INDEX IF NOT EXISTS idx_tasks_assignees_gin ON activity_tasks USING GIN (assignees);
 
