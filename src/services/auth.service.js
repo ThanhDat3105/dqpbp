@@ -22,7 +22,7 @@ const findUserByEmail = async (email) => {
      FROM users
      WHERE email = $1
      LIMIT 1`,
-    [email]
+    [email],
   );
   return rows[0] || null;
 };
@@ -61,7 +61,7 @@ const login = async ({ email, password }) => {
      DO UPDATE SET 
        revoked = EXCLUDED.revoked,
        expires_at = EXCLUDED.expires_at`,
-    [user.id, accessHash]
+    [user.id, accessHash],
   );
 
   // 🔥 Lưu refresh token
@@ -69,7 +69,7 @@ const login = async ({ email, password }) => {
     `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
      VALUES ($1, $2, 'refresh', false, NOW(), NOW() + INTERVAL '7 days')
      ON CONFLICT (token_hash) DO NOTHING`,
-    [user.id, refreshHash]
+    [user.id, refreshHash],
   );
 
   return {
@@ -101,7 +101,7 @@ const refreshAccessToken = async (refreshToken) => {
     `SELECT revoked FROM tokens
      WHERE token_hash = $1 AND type = 'refresh'
      LIMIT 1`,
-    [refreshHash]
+    [refreshHash],
   );
 
   if (rows.length === 0) {
@@ -113,23 +113,22 @@ const refreshAccessToken = async (refreshToken) => {
   }
 
   // 🔥 revoke refresh cũ
-  await pool.query(
-    `UPDATE tokens SET revoked = true WHERE token_hash = $1`,
-    [refreshHash]
-  );
+  await pool.query(`UPDATE tokens SET revoked = true WHERE token_hash = $1`, [
+    refreshHash,
+  ]);
 
   // 🔥 revoke ALL access token cũ
   await pool.query(
     `UPDATE tokens SET revoked = true 
      WHERE user_id = $1 AND type = 'access'`,
-    [userId]
+    [userId],
   );
 
   // load user
   const { rows: userRows } = await pool.query(
     `SELECT id, email, role, is_active 
      FROM users WHERE id = $1 LIMIT 1`,
-    [userId]
+    [userId],
   );
 
   const user = userRows[0];
@@ -156,7 +155,7 @@ const refreshAccessToken = async (refreshToken) => {
     `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
      VALUES ($1, $2, 'access', false, NOW(), NOW() + INTERVAL '1 hour')
      ON CONFLICT (token_hash) DO UPDATE SET revoked = false, expires_at = EXCLUDED.expires_at`,
-    [user.id, accessHash]
+    [user.id, accessHash],
   );
 
   // 🔥 lưu refresh mới
@@ -164,7 +163,7 @@ const refreshAccessToken = async (refreshToken) => {
     `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
      VALUES ($1, $2, 'refresh', false, NOW(), NOW() + INTERVAL '7 days')
      ON CONFLICT (token_hash) DO NOTHING`,
-    [user.id, newRefreshHash]
+    [user.id, newRefreshHash],
   );
 
   return {
@@ -200,7 +199,7 @@ const logout = async (token) => {
      VALUES ($1, $2, 'access', true, NOW(), $3)
      ON CONFLICT (token_hash)
      DO UPDATE SET revoked = true`,
-    [userId, tokenHash, expiresAt]
+    [userId, tokenHash, expiresAt],
   );
 
   return { message: "Logged out successfully" };
@@ -214,10 +213,84 @@ const getMe = async (userId) => {
      FROM users
      WHERE id = $1 AND is_active = true
      LIMIT 1`,
-    [userId]
+    [userId],
   );
 
   return rows[0] || null;
+};
+
+const register = async ({
+  name,
+  email,
+  password,
+  team,
+  role,
+  phone,
+  address,
+}) => {
+  // 1. Check email đã tồn tại chưa
+  const existingUser = await findUserByEmail(email);
+  if (existingUser) {
+    throw new ConflictRequestError("Email already exists");
+  }
+
+  // 2. Hash password
+  const passwordHash = await hashPassword(password);
+
+  // 3. Insert user
+  const { rows } = await pool.query(
+    `INSERT INTO users (name, email, password_hash, role, team, phone, address, is_active, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
+     RETURNING id, name, email, role, team`,
+    [name, email, passwordHash, role, team, phone || null, address || null],
+  );
+
+  const user = rows[0];
+
+  // 4. Tạo token giống login
+  const payload = {
+    user_id: user.id,
+    email: user.email,
+    role: user.role,
+  };
+
+  const access_token = signAccessToken(payload);
+  const refresh_token = signRefreshToken({ user_id: user.id });
+
+  // 5. Hash token
+  const accessHash = hashToken(access_token);
+  const refreshHash = hashToken(refresh_token);
+
+  // 6. Lưu access token
+  await pool.query(
+    `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
+     VALUES ($1, $2, 'access', false, NOW(), NOW() + INTERVAL '1 hour')
+     ON CONFLICT (token_hash)
+     DO UPDATE SET revoked = false, expires_at = EXCLUDED.expires_at`,
+    [user.id, accessHash],
+  );
+
+  // 7. Lưu refresh token
+  await pool.query(
+    `INSERT INTO tokens (user_id, token_hash, type, revoked, created_at, expires_at)
+     VALUES ($1, $2, 'refresh', false, NOW(), NOW() + INTERVAL '7 days')
+     ON CONFLICT (token_hash) DO NOTHING`,
+    [user.id, refreshHash],
+  );
+
+  // 8. Return giống login
+  return {
+    token: {
+      access_token,
+      refresh_token,
+    },
+    user: {
+      id: user.id,
+      name: user.name,
+      role: user.role,
+      team: user.team,
+    },
+  };
 };
 
 module.exports = {
@@ -225,4 +298,5 @@ module.exports = {
   refreshAccessToken,
   logout,
   getMe,
+  register,
 };
