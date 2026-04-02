@@ -34,8 +34,7 @@ class CalendarService {
       "  t.status,",
       "  t.team,",
       "  t.activity_id,",
-      "  a.name AS activity_name,",
-      "  a.work_group",
+      "  a.name AS activity_name",
       "FROM activity_tasks t",
       "INNER JOIN activities a ON a.id = t.activity_id",
       "WHERE t.due_date BETWEEN $1 AND $2",
@@ -83,7 +82,6 @@ class CalendarService {
         activityBucket = {
           activity_id: row.activity_id,
           activity_name: row.activity_name,
-          work_group: row.work_group,
           tasks: [],
         };
 
