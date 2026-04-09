@@ -6,6 +6,7 @@ const paginate = async ({
   searchFields = [],
   sortBy = "created_at",
   order = "DESC",
+  rawOrderBy = null,   // overrides sortBy/order when provided
   page = 1,
   limit = 10,
   select = "*",
@@ -20,9 +21,15 @@ const paginate = async ({
   Object.entries(filter).forEach(([key, value]) => {
     if (value !== undefined) {
       if (key.endsWith("_from")) {
+        // field >= value  (inclusive lower bound)
         const field = key.replace("_from", "");
         whereClauses.push(`${field} >= $${index}`);
+      } else if (key.endsWith("_lte")) {
+        // field <= value  (inclusive upper bound)
+        const field = key.replace("_lte", "");
+        whereClauses.push(`${field} <= $${index}`);
       } else if (key.endsWith("_to")) {
+        // field < value   (exclusive upper bound — legacy)
         const field = key.replace("_to", "");
         whereClauses.push(`${field} < $${index}`);
       } else {
@@ -59,11 +66,12 @@ const paginate = async ({
   const totalResults = parseInt(countResult.rows[0].count);
 
   // DATA QUERY
+  const orderBySQL = rawOrderBy ?? `${sortBy} ${order}`;
   const dataQuery = `
     SELECT ${select}
     FROM ${table}
     ${whereSQL}
-    ORDER BY ${sortBy} ${order}
+    ORDER BY ${orderBySQL}
     LIMIT $${values.length + 1}
     OFFSET $${values.length + 2}
   `;

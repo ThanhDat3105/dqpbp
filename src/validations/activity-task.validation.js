@@ -6,7 +6,7 @@ const createActivityTask = {
   body: Joi.object().keys({
     activity_id: Joi.number().integer().required(),
     title: Joi.string().max(255).required(),
-    team: Joi.string().max(100).required(),
+    team: Joi.array().items(Joi.string()).min(1).required(),
     assignees: Joi.array().items(Joi.string()).required(),
     dueDate: Joi.string().required(),
     notes: Joi.string().allow("", null),
@@ -32,7 +32,7 @@ const updateActivityTask = {
   body: Joi.object()
     .keys({
       title: Joi.string().max(255),
-      team: Joi.string().max(100),
+      team: Joi.array().items(Joi.string()).min(1),
       assignees: Joi.array().items(Joi.string()),
       due_date: Joi.date().allow(null),
       report_fields: Joi.array()

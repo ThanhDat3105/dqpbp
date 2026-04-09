@@ -34,7 +34,7 @@ const createActivityTask = async (taskData) => {
       created_at,
       updated_at
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+    VALUES ($1,$2,$3::TEXT[],$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     RETURNING *`,
     [
       activity_id,
@@ -140,9 +140,38 @@ const updateActivityTaskStatus = async (id, status) => {
 
   const result = await pool.query(query, params);
 
+  const updatedTask = result.rows[0];
 
+  // ── Sync parent activity status ───────────────────────────────────────────
+  // Fetch the status of every task that belongs to the same activity
+  const siblingsResult = await pool.query(
+    `SELECT status FROM activity_tasks WHERE activity_id = $1`,
+    [updatedTask.activity_id],
+  );
 
-  return result.rows[0];
+  const allTasks = siblingsResult.rows;
+
+  const allCompleted = allTasks.every((t) => t.status === "completed");
+  // "has progress" = at least one task is in_progress OR completed
+  const hasProgress = allTasks.some(
+    (t) => t.status === "in_progress" || t.status === "completed",
+  );
+
+  let newActivityStatus;
+  if (allCompleted) {
+    newActivityStatus = "completed";
+  } else if (hasProgress) {
+    newActivityStatus = "in_progress";
+  } else {
+    newActivityStatus = "pending";
+  }
+
+  await pool.query(
+    `UPDATE activities SET status = $1, updated_at = NOW() WHERE id = $2`,
+    [newActivityStatus, updatedTask.activity_id],
+  );
+
+  return updatedTask;
 };
 
 /**
@@ -259,7 +288,12 @@ const updateActivityTask = async (taskId, activityId, updateData) => {
   let paramIndex = 1;
 
   for (const [key, value] of Object.entries(fieldsToUpdate)) {
-    updates.push(`${key} = $${paramIndex}`);
+    // Cast team to TEXT[] explicitly so pg sends it as a PostgreSQL array
+    if (key === "team") {
+      updates.push(`team = $${paramIndex}::TEXT[]`);
+    } else {
+      updates.push(`${key} = $${paramIndex}`);
+    }
     values.push(value);
     paramIndex++;
   }

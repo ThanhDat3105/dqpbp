@@ -5,11 +5,13 @@ const activityService = require("../services/activity.service");
 
 /**
  * GET /api/activities
+ * Query params: status, from_date, to_date, month, year, page, limit
  */
 const getActivities = async (req, res, next) => {
   try {
-    const { month, year, page, limit, ...rest } = req.query;
-    const filter = { month, year, ...rest };
+    const { month, year, status, from_date, to_date, page, limit } = req.query;
+
+    const filter = { month, year, status, from_date, to_date };
     const option = { page, limit };
 
     const data = await activityService.getActivities(filter, option);

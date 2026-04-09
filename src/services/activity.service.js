@@ -6,19 +6,21 @@ const getActivities = async (filter, option) => {
   let newFilter = {};
 
   if (filter.month && filter.year) {
-    const startDate = new Date(filter.year, filter.month - 1, 1);
-    const endDate = new Date(filter.year, filter.month, 1);
-
-    newFilter.start_date_from = startDate;
-    newFilter.start_date_to = endDate;
+    newFilter.start_date_from = new Date(filter.year, filter.month - 1, 1);
+    newFilter.start_date_to = new Date(filter.year, filter.month, 1); // exclusive
   }
 
-  // if (user.role !== "admin") {
-  //   newFilter.team = user.team;
-  // }
+  if (filter.status) {
+    newFilter.status = filter.status;
+  }
 
-  delete filter.month;
-  delete filter.year;
+  if (filter.from_date) {
+    newFilter.end_date_from = filter.from_date;
+  }
+
+  if (filter.to_date) {
+    newFilter.end_date_lte = filter.to_date;
+  }
 
   return await paginate({
     pool,
@@ -31,7 +33,7 @@ const getActivities = async (filter, option) => {
               json_build_object(
                 'id', t.id,
                 'title', t.title,
-                'completed', t.completed
+                'status', t.status
               )
             ) FILTER (WHERE t.id IS NOT NULL),
             '[]'
@@ -45,8 +47,15 @@ const getActivities = async (filter, option) => {
     filter: newFilter,
     page: Number(option.page) || 1,
     limit: Number(option.limit) || 10,
-    sortBy: "created_at",
-    order: "DESC",
+    rawOrderBy: `
+      end_date ASC,
+      CASE status
+        WHEN 'pending'     THEN 0
+        WHEN 'in_progress' THEN 1
+        WHEN 'completed'   THEN 2
+        ELSE 99
+      END ASC
+    `,
   });
 };
 
@@ -133,6 +142,8 @@ const createActivity = async (activityData) => {
 
   if (tasks.length > 0) {
     for (const task of tasks) {
+      console.log(task.team, task.assignees)
+
       await pool.query(
         `
           INSERT INTO activity_tasks (
@@ -160,7 +171,7 @@ const createActivity = async (activityData) => {
           task.completed || false,
           task.due_date,
           task.notes || null,
-          JSON.stringify(task.reportFields || []),
+          JSON.stringify(task.report_fields || []),
           task.accepted_at || null,
           task.created_at,
           task.updated_at,

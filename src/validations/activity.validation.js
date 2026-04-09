@@ -29,7 +29,7 @@ const createActivity = {
       .items(
         Joi.object({
           title: Joi.string().max(255).required(),
-          team: Joi.string().max(100).required(),
+          team: Joi.array().items(Joi.string()).min(1).required(),
           assignees: Joi.array().items(Joi.string()).required(),
           status: Joi.string()
             .valid("pending", "in_progress", "completed")
@@ -55,11 +55,35 @@ const createActivity = {
   }),
 };
 
+const ACTIVITY_STATUSES = ["pending", "in_progress", "completed"];
+
 const getActivities = {
   query: Joi.object()
     .keys({
+      // ─── Legacy calendar filters
       month: Joi.number().integer().min(1).max(12),
       year: Joi.number().integer(),
+
+      // ─── Status filter
+      status: Joi.string()
+        .valid(...ACTIVITY_STATUSES)
+        .messages({
+          "any.only": `status must be one of: ${ACTIVITY_STATUSES.join(", ")}`,
+        }),
+
+      // ─── Date range filters (ISO: YYYY-MM-DD)
+      from_date: Joi.string()
+        .pattern(/^\d{4}-\d{2}-\d{2}$/)
+        .messages({
+          "string.pattern.base": "from_date must be a valid ISO date (YYYY-MM-DD)",
+        }),
+      to_date: Joi.string()
+        .pattern(/^\d{4}-\d{2}-\d{2}$/)
+        .messages({
+          "string.pattern.base": "to_date must be a valid ISO date (YYYY-MM-DD)",
+        }),
+
+      // ─── Pagination
       page: Joi.number().integer().min(1).default(1),
       limit: Joi.number().integer().min(1).max(100).default(10),
     })
