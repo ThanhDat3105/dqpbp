@@ -28,7 +28,32 @@ const updateActivityTaskStatus = {
   }),
 };
 
+const updateActivityTask = {
+  body: Joi.object()
+    .keys({
+      title: Joi.string().max(255),
+      team: Joi.string().max(100),
+      assignees: Joi.array().items(Joi.string()),
+      due_date: Joi.date().allow(null),
+      report_fields: Joi.array()
+        .items(
+          Joi.object({
+            name: Joi.string(),
+            value: Joi.string(),
+          }),
+        )
+        .allow(null),
+      notes: Joi.string().allow("", null),
+      completed: Joi.boolean(),
+      status: Joi.string().valid("pending", "in_progress", "completed"),
+      completed_at: Joi.date().allow(null),
+      accepted_at: Joi.date().allow(null),
+    })
+    .min(1), // At least one field must be provided
+};
+
 module.exports = {
   createActivityTask,
   updateActivityTaskStatus,
+  updateActivityTask,
 };

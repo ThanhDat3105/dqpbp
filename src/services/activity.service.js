@@ -86,6 +86,7 @@ const createActivity = async (activityData) => {
     location,
     document_number,
     attached_files,
+    status,
     created_by,
     created_at,
     updated_at,
@@ -106,10 +107,10 @@ const createActivity = async (activityData) => {
     `
       INSERT INTO activities (
         name, work_type, department, start_date, end_date,
-        location, document_number, attached_files,
+        location, document_number, attached_files, status,
         created_by, created_at, updated_at
       )
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
       RETURNING *;
       `,
     [
@@ -121,6 +122,7 @@ const createActivity = async (activityData) => {
       location,
       document_number,
       attached_files ? JSON.stringify(attached_files) : null,
+      status,
       created_by,
       created_at,
       updated_at,

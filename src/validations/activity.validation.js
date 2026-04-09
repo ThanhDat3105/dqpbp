@@ -9,12 +9,20 @@ const createActivity = {
     work_type: Joi.string()
       .valid(...Object.values(WORK_TYPE))
       .required(),
-    department: Joi.string().required(),
+    department: Joi.string()
+      .valid(
+        "administration_office",
+        "planning",
+        "political_affairs",
+        "logistics",
+        "mobilization_recruitment",
+      )
+      .required(),
     location: Joi.string(),
-    document_number: Joi.string(),
+    document_number: Joi.string().allow("", null),
     status: Joi.string()
       .valid("pending", "in_progress", "completed")
-      .default("in_progress"),
+      .default("pending"),
     start_date: Joi.date().required(),
     end_date: Joi.date().required(),
     tasks: Joi.array()

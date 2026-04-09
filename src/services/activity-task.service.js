@@ -1,4 +1,5 @@
 const pool = require("../config/db");
+const { BadRequestError, NotFoundError } = require("../core/error.response");
 
 const createActivityTask = async (taskData) => {
   const {
@@ -56,19 +57,233 @@ const createActivityTask = async (taskData) => {
 };
 
 const updateActivityTaskStatus = async (id, status) => {
-  const result = await pool.query(
-    `UPDATE activity_tasks
-     SET status = $1,
-         updated_at = NOW()
-     WHERE id = $2
-     RETURNING *`,
-    [status, id],
+  // First, fetch the task to validate report_fields and check existence
+  const taskResult = await pool.query(
+    `SELECT id, report_fields FROM activity_tasks WHERE id = $1`,
+    [id],
   );
 
+  // Check if task exists
+  if (taskResult.rows.length === 0) {
+    throw new NotFoundError(`Task with ID ${id} not found`);
+  }
+
+  const task = taskResult.rows[0];
+
+  // If status is being updated to "completed", validate report_fields
+  if (status === "completed") {
+    let reportFields = task.report_fields;
+
+    // Handle null/undefined report_fields
+    if (!reportFields) {
+      throw new BadRequestError(
+        "All report fields must be filled before completing the task",
+      );
+    }
+
+    if (typeof reportFields === "string") {
+      try {
+        reportFields = JSON.parse(reportFields);
+      } catch (error) {
+        throw new BadRequestError(
+          "All report fields must be filled before completing the task",
+        );
+      }
+    }
+
+    if (!Array.isArray(reportFields)) {
+      throw new BadRequestError(
+        "All report fields must be filled before completing the task",
+      );
+    }
+
+    const isValid = reportFields.every(
+      (field) =>
+        field && // field exists
+        typeof field.name === "string" &&
+        typeof field.value === "string" &&
+        field.value.trim().length > 0,
+    );
+
+    if (!isValid) {
+      throw new BadRequestError(
+        "All report fields must be filled before completing the task",
+      );
+    }
+  }
+
+  // Build the update query with conditional completed_at
+  let query;
+  let params;
+
+  if (status === "completed") {
+    query = `
+      UPDATE activity_tasks
+      SET status = $1,
+          completed_at = NOW(),
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING *
+    `;
+    params = [status, id];
+  } else {
+    query = `
+      UPDATE activity_tasks
+      SET status = $1,
+          completed_at = NULL,
+          updated_at = NOW()
+      WHERE id = $2
+      RETURNING *
+    `;
+    params = [status, id];
+  }
+
+  const result = await pool.query(query, params);
+
+
+
+  return result.rows[0];
+};
+
+/**
+ * Partial update for activity task
+ * Only updates fields provided in updateData
+ * Forbidden fields: id, activity_id, created_at, created_by
+ *
+ * @param {number} taskId - Task ID
+ * @param {number} activityId - Activity ID (for validation)
+ * @param {object} updateData - Fields to update
+ * @returns {object} Updated task row
+ */
+const updateActivityTask = async (taskId, activityId, updateData) => {
+  // Forbidden fields that cannot be updated
+  const forbiddenFields = ["id", "activity_id", "created_at", "created_by"];
+
+  // Allowed fields for update
+  const allowedFields = [
+    "title",
+    "team",
+    "assignees",
+    "due_date",
+    "report_fields",
+    "notes",
+    "completed",
+    "status",
+    "completed_at",
+    "accepted_at",
+  ];
+
+  // Filter to only allowed fields
+  const fieldsToUpdate = {};
+  for (const key of Object.keys(updateData)) {
+    if (forbiddenFields.includes(key)) {
+      continue; // Skip forbidden fields
+    }
+    if (allowedFields.includes(key)) {
+      fieldsToUpdate[key] = updateData[key];
+    }
+  }
+
+  // Validate that we have fields to update
+  if (Object.keys(fieldsToUpdate).length === 0) {
+    throw new BadRequestError("No valid fields provided for update");
+  }
+
+  // Handle special case: completed_at logic
+  if ("completed" in fieldsToUpdate) {
+    if (fieldsToUpdate.completed === true) {
+      // If completed = true, set completed_at to NOW() if not provided
+      if (!("completed_at" in fieldsToUpdate)) {
+        fieldsToUpdate.completed_at = new Date();
+      }
+    } else if (fieldsToUpdate.completed === false) {
+      // If completed = false, set completed_at to NULL
+      fieldsToUpdate.completed_at = null;
+    }
+  }
+
+  // Validate status field if provided
+  if ("status" in fieldsToUpdate) {
+    const validStatuses = ["pending", "in_progress", "completed"];
+    if (!validStatuses.includes(fieldsToUpdate.status)) {
+      throw new BadRequestError(
+        `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+      );
+    }
+  }
+
+  if ("report_fields" in fieldsToUpdate) {
+    if (fieldsToUpdate.report_fields !== null) {
+      if (!Array.isArray(fieldsToUpdate.report_fields)) {
+        throw new BadRequestError("report_fields must be a JSON array");
+      }
+
+      // 🔥 Lấy dữ liệu cũ từ DB
+      const current = await pool.query(
+        `SELECT report_fields FROM activity_tasks WHERE id = $1 AND activity_id = $2`,
+        [taskId, activityId],
+      );
+
+      let existingFields = [];
+      if (current.rows[0]?.report_fields) {
+        existingFields = current.rows[0].report_fields;
+        // Nếu DB đang lưu dạng string thì parse
+        if (typeof existingFields === "string") {
+          existingFields = JSON.parse(existingFields);
+        }
+      }
+
+      // 🔥 Merge dữ liệu
+      const incomingFields = fieldsToUpdate.report_fields;
+
+      const merged = existingFields.map((field) => {
+        const updated = incomingFields.find((f) => f.name === field.name);
+        return updated ? { ...field, ...updated } : field;
+      });
+
+      // Nếu FE gửi field mới chưa tồn tại thì thêm vào
+      incomingFields.forEach((f) => {
+        const exists = existingFields.find((ef) => ef.name === f.name);
+        if (!exists) {
+          merged.push(f);
+        }
+      });
+
+      fieldsToUpdate.report_fields = JSON.stringify(merged);
+    }
+  }
+
+  // Build dynamic UPDATE query
+  const updates = [];
+  const values = [];
+  let paramIndex = 1;
+
+  for (const [key, value] of Object.entries(fieldsToUpdate)) {
+    updates.push(`${key} = $${paramIndex}`);
+    values.push(value);
+    paramIndex++;
+  }
+
+  // Add updated_at timestamp
+  updates.push(`updated_at = NOW()`);
+
+  // Add WHERE conditions
+  values.push(taskId);
+  values.push(activityId);
+
+  const query = `
+    UPDATE activity_tasks
+    SET ${updates.join(", ")}
+    WHERE id = $${paramIndex} AND activity_id = $${paramIndex + 1}
+    RETURNING *
+  `;
+
+  const result = await pool.query(query, values);
   return result.rows[0];
 };
 
 module.exports = {
   createActivityTask,
   updateActivityTaskStatus,
+  updateActivityTask,
 };
