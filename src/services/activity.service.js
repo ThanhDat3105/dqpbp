@@ -142,8 +142,6 @@ const createActivity = async (activityData) => {
 
   if (tasks.length > 0) {
     for (const task of tasks) {
-      console.log(task.team, task.assignees)
-
       await pool.query(
         `
           INSERT INTO activity_tasks (
