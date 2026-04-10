@@ -8,8 +8,6 @@ const {
 
 class CalendarService {
   async getCalendarData({ view, date, user }) {
-    console.log(user, 'usersssssssssssssss')
-
     const range = getCalendarDateRange(view, date);
 
     if (!range) {
@@ -23,13 +21,9 @@ class CalendarService {
 
     const teamFilterClause = !isCommander ? "AND $3 = ANY(t.team)" : "";
 
-    console.log(teamFilterClause, 'teamFilterClause')
-
     if (!isCommander) {
       values.push(user?.team || "");
     }
-
-    console.log(values, 'values')
 
     const query = [
       "SELECT",
