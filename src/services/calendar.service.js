@@ -2,13 +2,14 @@ const pool = require("../config/db");
 const moment = require("moment");
 const { BadRequestError } = require("../core/error.response");
 const {
-  DATE_FORMAT,
   getCalendarDateRange,
   buildPrefilledDateMap,
 } = require("../utils/calendar-date.util");
 
 class CalendarService {
   async getCalendarData({ view, date, user }) {
+    console.log(user, 'usersssssssssssssss')
+
     const range = getCalendarDateRange(view, date);
 
     if (!range) {
@@ -20,11 +21,15 @@ class CalendarService {
     const isCommander = user?.role === "COMMANDER";
     const values = [range.startDate, range.endDate];
 
-    const teamFilterClause = !isCommander ? "AND t.team = $3" : "";
+    const teamFilterClause = !isCommander ? "AND $3 = ANY(t.team)" : "";
+
+    console.log(teamFilterClause, 'teamFilterClause')
 
     if (!isCommander) {
       values.push(user?.team || "");
     }
+
+    console.log(values, 'values')
 
     const query = [
       "SELECT",
