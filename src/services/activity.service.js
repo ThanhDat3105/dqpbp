@@ -142,8 +142,6 @@ const createActivity = async (activityData) => {
 
   if (tasks.length > 0) {
     for (const task of tasks) {
-      console.log(task.team, task.assignees)
-
       await pool.query(
         `
           INSERT INTO activity_tasks (
@@ -158,9 +156,10 @@ const createActivity = async (activityData) => {
             report_fields,
             accepted_at,
             created_at,
-            updated_at
+            updated_at,
+            requires_dqcd
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
           `,
         [
           activity.id,
@@ -175,6 +174,7 @@ const createActivity = async (activityData) => {
           task.accepted_at || null,
           task.created_at,
           task.updated_at,
+          task.requires_dqcd || false,
         ],
       );
     }
