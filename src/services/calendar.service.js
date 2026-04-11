@@ -33,10 +33,13 @@ class CalendarService {
       "  t.status,",
       "  t.team,",
       "  t.activity_id,",
-      "  a.name AS activity_name",
+      "  a.name AS activity_name,",
+      "  a.start_date",                         // <-- thêm start_date từ activities
       "FROM activity_tasks t",
       "INNER JOIN activities a ON a.id = t.activity_id",
-      "WHERE t.due_date BETWEEN $1 AND $2",
+      // Task overlap với calendar range nếu: start_date <= range.endDate AND due_date >= range.startDate
+      "WHERE a.start_date <= $2 AND t.due_date >= $1",
+      "AND t.status NOT IN ('canceled', 'completed')",
       teamFilterClause,
       "ORDER BY t.due_date ASC, t.id ASC",
     ]
@@ -53,48 +56,77 @@ class CalendarService {
     const activityMapByDate = new Map();
 
     rows.forEach((row) => {
-      const dateKey = moment(row.due_date).format('YYYY-MM-DD HH:mm:ss');
+      // Clamp: chỉ render trong khoảng calendar hiện tại
+      const taskStart = moment.max(
+        moment(row.start_date).startOf("day"),
+        moment(range.startDate).startOf("day"),
+      );
+      const taskEnd = moment.min(
+        moment(row.due_date).startOf("day"),
+        moment(range.endDate).startOf("day"),
+      );
 
-      if (!groupedData[dateKey]) {
-        groupedData[dateKey] = [];
+      // Loop qua từng ngày trong khoảng [taskStart, taskEnd]
+      for (
+        let day = taskStart.clone();
+        day.isSameOrBefore(taskEnd);
+        day.add(1, "day")
+      ) {
+        const dateKey = day.format("YYYY-MM-DD HH:mm:ss");
+
+        if (!groupedData[dateKey]) {
+          groupedData[dateKey] = [];
+        }
+
+        if (!isCommander) {
+          // Non-commander: flat list, tránh duplicate cùng task_id trong 1 ngày
+          const alreadyAdded = groupedData[dateKey].some(
+            (t) => t.task_id === row.task_id,
+          );
+          if (!alreadyAdded) {
+            groupedData[dateKey].push({
+              task_id: row.task_id,
+              title: row.title,
+              due_date: moment(row.due_date).format("YYYY-MM-DD HH:mm:ss"),
+              status: row.status,
+              activity_id: row.activity_id,
+            });
+          }
+          continue;
+        }
+
+        // Commander: group by activity
+        if (!activityMapByDate.has(dateKey)) {
+          activityMapByDate.set(dateKey, new Map());
+        }
+
+        const dateActivityMap = activityMapByDate.get(dateKey);
+        let activityBucket = dateActivityMap.get(row.activity_id);
+
+        if (!activityBucket) {
+          activityBucket = {
+            activity_id: row.activity_id,
+            activity_name: row.activity_name,
+            tasks: [],
+          };
+          dateActivityMap.set(row.activity_id, activityBucket);
+          groupedData[dateKey].push(activityBucket);
+        }
+
+        // Tránh duplicate task trong cùng 1 activity bucket của 1 ngày
+        const alreadyAdded = activityBucket.tasks.some(
+          (t) => t.task_id === row.task_id,
+        );
+        if (!alreadyAdded) {
+          activityBucket.tasks.push({
+            task_id: row.task_id,
+            title: row.title,
+            due_date: moment(row.due_date).format("YYYY-MM-DD HH:mm:ss"),
+            status: row.status,
+            team: row.team,
+          });
+        }
       }
-
-      if (!isCommander) {
-        groupedData[dateKey].push({
-          task_id: row.task_id,
-          title: row.title,
-          due_date: dateKey,
-          status: row.status,
-          activity_id: row.activity_id,
-        });
-        return;
-      }
-
-      if (!activityMapByDate.has(dateKey)) {
-        activityMapByDate.set(dateKey, new Map());
-      }
-
-      const dateActivityMap = activityMapByDate.get(dateKey);
-      let activityBucket = dateActivityMap.get(row.activity_id);
-
-      if (!activityBucket) {
-        activityBucket = {
-          activity_id: row.activity_id,
-          activity_name: row.activity_name,
-          tasks: [],
-        };
-
-        dateActivityMap.set(row.activity_id, activityBucket);
-        groupedData[dateKey].push(activityBucket);
-      }
-
-      activityBucket.tasks.push({
-        task_id: row.task_id,
-        title: row.title,
-        due_date: dateKey,
-        status: row.status,
-        team: row.team,
-      });
     });
 
     return groupedData;
