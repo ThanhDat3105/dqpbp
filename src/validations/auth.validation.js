@@ -2,7 +2,7 @@
 
 const Joi = require("joi");
 
-const ROLES = ["STANDING_MILITIA", "COMMANDER"];
+const ROLES = ["DQTT", "CHI_HUY"];
 
 const register = {
   body: Joi.object().keys({

@@ -16,7 +16,7 @@ class CalendarService {
       );
     }
 
-    const isCommander = user?.role === "COMMANDER";
+    const isCommander = user?.role === "CHI_HUY";
     const values = [range.startDate, range.endDate];
 
     const teamFilterClause = !isCommander ? "AND $3 = ANY(t.team)" : "";

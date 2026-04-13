@@ -9,12 +9,76 @@ function getISOWeekNumber(date) {
   return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
 }
 
-const getWeeklySchedule = async (weekStart) => {
+const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
+  const currentUser = await pool.query('SELECT * FROM users WHERE id = $1', [user_id]);
+  const { id, role, unit_code, managed_units } = currentUser.rows[0];
+
+  const allowedRoles = ["CHI_HUY", "TO_TRUONG", "DQTT", "DQCD"];
+  if (!allowedRoles.includes(role)) {
+    throw new Error("Invalid role");
+  }
+
+  let memberFilter = "";
+  let params = [weekStart];
+
+  // ✅ CHỈ HUY → xem tất cả, filter theo unit_filter (mặc định a1)
+  if (role === "CHI_HUY") {
+    const filterUnit = unitFilter === "all" ? null : unitFilter || "a1";
+    if (filterUnit) {
+      memberFilter = `WHERE role = 'DQCD' AND unit_code = $2`;
+      params.push(filterUnit);
+    } else {
+      memberFilter = `WHERE role = 'DQCD'`;
+    }
+  }
+
+  // ✅ TỔ TRƯỞNG → chỉ xem unit của mình (không cho filter)
+  else if (role === "TO_TRUONG") {
+    if (!unit_code) {
+      return {
+        week: { start: weekStart, end: weekStart, week_number: null },
+        members: [],
+        total: 0,
+        last_updated: new Date().toISOString()
+      };
+    }
+    memberFilter = `WHERE role = 'DQCD' AND unit_code = $2`;
+    params.push(unit_code);
+  }
+
+  // ✅ DQTT → xem các unit mình quản lý, filter theo managed_units
+  else if (role === "DQTT") {
+    if (!managed_units || managed_units.length === 0) {
+      return {
+        week: { start: weekStart, end: weekStart, week_number: null },
+        members: [],
+        total: 0,
+        last_updated: new Date().toISOString()
+      };
+    }
+    memberFilter = `WHERE role = 'DQCD' AND unit_code = ANY($2::text[])`;
+    params.push(managed_units);
+  }
+
+  // ✅ DQCD → chỉ xem unit của mình
+  else if (role === "DQCD") {
+    if (!unit_code) {
+      return {
+        week: { start: weekStart, end: weekStart, week_number: null },
+        members: [],
+        total: 0,
+        last_updated: new Date().toISOString()
+      };
+    }
+    memberFilter = `WHERE role = 'DQCD' AND unit_code = $2`;
+    params.push(unit_code);
+  }
+
   const query = `
     WITH members AS (
       SELECT id AS user_id, name
       FROM public.users
-      WHERE team = 'a1'
+      ${memberFilter}
     ),
     week_days AS (
       SELECT generate_series(
@@ -44,7 +108,7 @@ const getWeeklySchedule = async (weekStart) => {
     ORDER BY m.name, d.day_of_week, t.shift;
   `;
 
-  const { rows } = await pool.query(query, [weekStart]);
+  const { rows } = await pool.query(query, params);
 
   const membersMap = new Map();
 
@@ -82,10 +146,10 @@ const getWeeklySchedule = async (weekStart) => {
   return {
     week: {
       start: weekStart,
-      end: endDate.toISOString().split('T')[0],
+      end: endDate.toISOString().split("T")[0],
       week_number: getISOWeekNumber(startDate)
     },
-    members: members,
+    members,
     total: members.length,
     last_updated: new Date().toISOString()
   };

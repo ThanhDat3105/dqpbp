@@ -6,11 +6,11 @@ const { ForbiddenError, AuthFailureError } = require("../core/error.response");
  * Role-based authorization middleware.
  * Must be used AFTER the authentication middleware.
  *
- * @param {string[]} allowedRoles - e.g. ["COMMANDER"]
+ * @param {string[]} allowedRoles - e.g. ["CHI_HUY"]
  * @returns {function} Express middleware
  *
  * @example
- * router.get("/admin-only", authentication, requireRole(["COMMANDER"]), handler)
+ * router.get("/admin-only", authentication, requireRole(["CHI_HUY"]), handler)
  */
 const requireRole = (allowedRoles = []) => {
   return (req, res, next) => {

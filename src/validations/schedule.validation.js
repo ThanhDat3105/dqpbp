@@ -17,6 +17,8 @@ const getWeekly = Joi.object({
       "string.pattern.base": "week_start must be in YYYY-MM-DD format",
       "any.required": "week_start is required",
     }),
+  user_id: Joi.number().integer().required(),
+  unit_filter: Joi.string().allow(null, ""),
 });
 
 const upsertTemplate = Joi.object({

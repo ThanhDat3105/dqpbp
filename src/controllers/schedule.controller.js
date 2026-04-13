@@ -15,7 +15,7 @@ const getWeekly = async (req, res, next) => {
       });
     }
 
-    const { week_start } = value;
+    const { week_start, user_id, unit_filter } = value;
 
     const reqDate = new Date(week_start);
     if (reqDate.getUTCDay() !== 1) {
@@ -26,7 +26,11 @@ const getWeekly = async (req, res, next) => {
       });
     }
 
-    const data = await scheduleService.getWeeklySchedule(week_start);
+    const data = await scheduleService.getWeeklySchedule(
+      week_start,
+      user_id,
+      unit_filter
+    );
 
     return new SuccessResponse({
       message: "Get weekly schedule successfully",
