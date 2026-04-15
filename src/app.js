@@ -77,7 +77,6 @@ app.use("/api/auth", authLimiter);
 
 // ROUTES
 app.use("/api", router);
-// app.use("/admin", routerAdmin);
 
 // 404 HANDLER
 app.use((req, res, next) => {

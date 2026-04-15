@@ -64,9 +64,16 @@ const buildPrefilledDateMap = (startDate, endDate) => {
   return dateMap;
 };
 
+const getWeekEnd = (start) => {
+  const d = new Date(start);
+  d.setDate(d.getDate() + 6);
+  return d.toISOString().split("T")[0];
+};
+
 module.exports = {
   DATE_FORMAT,
   SUPPORTED_CALENDAR_VIEWS,
   getCalendarDateRange,
   buildPrefilledDateMap,
+  getWeekEnd
 };
