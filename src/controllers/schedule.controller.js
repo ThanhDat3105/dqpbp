@@ -148,9 +148,29 @@ const updateMobilize = async (req, res) => {
   }
 };
 
+const registerSchedule = async (req, res) => {
+  try {
+    const { error, value } = scheduleValidation.registerSchedule.validate(req.body);
+    if (error) return res.status(400).json({ success: false, error: error.message });
+
+    const { user_id, week_start, schedules } = value;
+
+    const exists = await scheduleService.checkUserExists(user_id);
+    if (!exists) return res.status(404).json({ success: false, error: "User not found" });
+
+    await scheduleService.registerSchedule(user_id, week_start, schedules);
+
+    res.json({ success: true, message: `Đăng ký lịch tuần ${week_start} thành công` });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ success: false, error: "Database error" });
+  }
+};
+
 module.exports = {
   getWeekly,
   upsertTemplate,
   deleteTemplate,
-  updateMobilize
+  updateMobilize,
+  registerSchedule
 };

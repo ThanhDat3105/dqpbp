@@ -8,5 +8,6 @@ router.get("/weekly", scheduleController.getWeekly);
 router.put("/template", scheduleController.upsertTemplate);
 router.delete("/template", scheduleController.deleteTemplate);
 router.put("/mobilize", scheduleController.updateMobilize);
+router.post('/register', scheduleController.registerSchedule)
 
 module.exports = router;

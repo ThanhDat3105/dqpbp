@@ -210,10 +210,48 @@ const checkUserExists = async (userId) => {
   return rows.length > 0;
 };
 
+const registerSchedule = async (userId, weekStart, schedules) => {
+
+
+  const savedResults = [];
+
+  for (const item of schedules) {
+    if (item.day_of_week < 1 || item.day_of_week > 5) {
+      throw new Error(`Ngày đăng ký không hợp lệ: ${item.day_of_week}. Chỉ cho phép đăng ký từ Thứ 2 đến Thứ 6.`);
+    }
+
+    const query = `
+        INSERT INTO user_schedule_templates (user_id, week_start, day_of_week, shift, start_time, end_time, note)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (user_id, week_start, day_of_week, shift) 
+        DO UPDATE SET
+          start_time = EXCLUDED.start_time,
+          end_time = EXCLUDED.end_time,
+          updated_at = CURRENT_TIMESTAMP
+        RETURNING *; -- 👇 Thêm dòng này để SQL trả về record vừa insert/update
+      `;
+
+    const { rows } = await pool.query(query, [
+      userId,
+      weekStart,
+      item.day_of_week,
+      item.shift,
+      item.start_time,
+      item.end_time,
+      item.note
+    ]);
+
+    savedResults.push(rows[0]);
+  }
+
+  return savedResults;
+};
+
 module.exports = {
   getWeeklySchedule,
   upsertTemplate,
   deleteTemplate,
   updateMobilize,
-  checkUserExists
+  checkUserExists,
+  registerSchedule
 };
