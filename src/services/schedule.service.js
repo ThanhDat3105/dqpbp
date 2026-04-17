@@ -10,8 +10,23 @@ function getISOWeekNumber(date) {
 }
 
 const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
-  const currentUser = await pool.query('SELECT * FROM users WHERE id = $1', [user_id]);
-  const { id, role, unit_code, managed_units } = currentUser.rows[0];
+  // Normalize weekStart về Monday của tuần (ISO week starts on Monday)
+  const inputDate = new Date(weekStart);
+  const day = inputDate.getUTCDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
+  const diff = day === 0 ? -6 : 1 - day; // Sun → lùi 6 ngày; các ngày khác → về Monday
+  inputDate.setUTCDate(inputDate.getUTCDate() + diff);
+  const normalizedWeekStart = inputDate.toISOString().split("T")[0];
+
+  const currentUser = await pool.query(
+    'SELECT * FROM users WHERE id = $1',
+    [user_id]
+  );
+
+  if (currentUser.rowCount === 0) {
+    throw new Error("User not found");
+  }
+
+  const { role, unit_code, managed_units } = currentUser.rows[0];
 
   const allowedRoles = ["CHI_HUY", "TO_TRUONG", "DQTT", "DQCD"];
   if (!allowedRoles.includes(role)) {
@@ -19,57 +34,47 @@ const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
   }
 
   let memberFilter = "";
-  let params = [weekStart];
+  let params = [normalizedWeekStart]; // $1 = normalizedWeekStart
 
-  // ✅ CHỈ HUY → xem tất cả, filter theo unit_filter (mặc định a1)
-  if (role === "CHI_HUY") {
+  if (role === "CHI_HUY" || role === "TO_TRUONG") {
     const filterUnit = unitFilter === "all" ? null : unitFilter || "a1";
+
     if (filterUnit) {
       memberFilter = `WHERE role = 'DQCD' AND unit_code = $2`;
       params.push(filterUnit);
     } else {
       memberFilter = `WHERE role = 'DQCD'`;
     }
-  }
-
-  // ✅ TỔ TRƯỞNG → chỉ xem unit của mình (không cho filter)
-  else if (role === "TO_TRUONG") {
-    if (!unit_code) {
-      return {
-        week: { start: weekStart, end: weekStart, week_number: null },
-        members: [],
-        total: 0,
-        last_updated: new Date().toISOString()
-      };
-    }
-    memberFilter = `WHERE role = 'DQCD' AND unit_code = $2`;
-    params.push(unit_code);
-  }
-
-  // ✅ DQTT → xem các unit mình quản lý, filter theo managed_units
-  else if (role === "DQTT") {
+  } else if (role === "DQTT") {
     if (!managed_units || managed_units.length === 0) {
       return {
-        week: { start: weekStart, end: weekStart, week_number: null },
+        week: {
+          start: normalizedWeekStart,
+          end: normalizedWeekStart,
+          week_number: null,
+        },
         members: [],
         total: 0,
-        last_updated: new Date().toISOString()
+        last_updated: new Date().toISOString(),
       };
     }
-    memberFilter = `WHERE role = 'DQCD' AND unit_code = ANY($2::text[])`;
-    params.push(managed_units);
-  }
 
-  // ✅ DQCD → chỉ xem unit của mình
-  else if (role === "DQCD") {
+    memberFilter = `WHERE role = 'DQCD' AND unit_code = ANY($2)`;
+    params.push(managed_units);
+  } else if (role === "DQCD") {
     if (!unit_code) {
       return {
-        week: { start: weekStart, end: weekStart, week_number: null },
+        week: {
+          start: normalizedWeekStart,
+          end: normalizedWeekStart,
+          week_number: null,
+        },
         members: [],
         total: 0,
-        last_updated: new Date().toISOString()
+        last_updated: new Date().toISOString(),
       };
     }
+
     memberFilter = `WHERE role = 'DQCD' AND unit_code = $2`;
     params.push(unit_code);
   }
@@ -96,15 +101,23 @@ const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
       m.name,
       d.day_of_week,
       t.shift,
-      to_char(t.start_time, 'HH24:MI') as start_time,
-      to_char(t.end_time, 'HH24:MI') as end_time,
+      to_char(t.start_time, 'HH24:MI') AS start_time,
+      to_char(t.end_time, 'HH24:MI') AS end_time,
       COALESCE(aw.mobilize_count, 0) AS mobilize_count
     FROM members m
     CROSS JOIN days_with_dow d
-    LEFT JOIN user_schedule_templates t
-      ON t.user_id = m.user_id AND t.day_of_week = d.day_of_week
+    LEFT JOIN LATERAL (
+      SELECT shift, start_time, end_time
+      FROM user_schedule_templates
+      WHERE user_id = m.user_id
+        AND day_of_week = d.day_of_week
+        AND (week_start = $1::date OR week_start IS NULL)
+      ORDER BY week_start NULLS LAST  -- tuần cụ thể ưu tiên hơn NULL (default template)
+      LIMIT 1
+    ) t ON true
     LEFT JOIN availability_weeks aw
-      ON aw.user_id = m.user_id AND aw.week_start = $1::date
+      ON aw.user_id = m.user_id
+      AND aw.week_start::date = $1::date
     ORDER BY m.name, d.day_of_week, t.shift;
   `;
 
@@ -112,7 +125,7 @@ const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
 
   const membersMap = new Map();
 
-  rows.forEach(row => {
+  rows.forEach((row) => {
     if (!membersMap.has(row.user_id)) {
       membersMap.set(row.user_id, {
         user_id: row.user_id,
@@ -125,8 +138,8 @@ const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
           4: { SANG: null, CHIEU: null, DEM: null },
           5: { SANG: null, CHIEU: null, DEM: null },
           6: { SANG: null, CHIEU: null, DEM: null },
-          7: { SANG: null, CHIEU: null, DEM: null }
-        }
+          7: { SANG: null, CHIEU: null, DEM: null },
+        },
       });
     }
 
@@ -139,19 +152,20 @@ const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
   });
 
   const members = Array.from(membersMap.values());
-  const startDate = new Date(weekStart);
+
+  const startDate = new Date(normalizedWeekStart);
   const endDate = new Date(startDate);
-  endDate.setDate(startDate.getDate() + 6);
+  endDate.setUTCDate(startDate.getUTCDate() + 6);
 
   return {
     week: {
-      start: weekStart,
+      start: normalizedWeekStart,
       end: endDate.toISOString().split("T")[0],
-      week_number: getISOWeekNumber(startDate)
+      week_number: getISOWeekNumber(startDate),
     },
     members,
     total: members.length,
-    last_updated: new Date().toISOString()
+    last_updated: new Date().toISOString(),
   };
 };
 
@@ -211,15 +225,18 @@ const checkUserExists = async (userId) => {
 };
 
 const registerSchedule = async (userId, weekStart, schedules) => {
+  const today = new Date();
+  const day = today.getDay()
 
+  if (day === 0 || day === 6) {
+    throw new Error(
+      "Hôm nay là Thứ 7 hoặc Chủ nhật. Chỉ được phép đăng ký từ Thứ 2 đến Thứ 6."
+    );
+  }
 
   const savedResults = [];
 
   for (const item of schedules) {
-    if (item.day_of_week < 1 || item.day_of_week > 5) {
-      throw new Error(`Ngày đăng ký không hợp lệ: ${item.day_of_week}. Chỉ cho phép đăng ký từ Thứ 2 đến Thứ 6.`);
-    }
-
     const query = `
         INSERT INTO user_schedule_templates (user_id, week_start, day_of_week, shift, start_time, end_time, note)
         VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -228,7 +245,7 @@ const registerSchedule = async (userId, weekStart, schedules) => {
           start_time = EXCLUDED.start_time,
           end_time = EXCLUDED.end_time,
           updated_at = CURRENT_TIMESTAMP
-        RETURNING *; -- 👇 Thêm dòng này để SQL trả về record vừa insert/update
+        RETURNING *;
       `;
 
     const { rows } = await pool.query(query, [

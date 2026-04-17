@@ -1,5 +1,6 @@
 "use strict";
 
+const { BadRequestError } = require("../core/error.response");
 const { SuccessResponse } = require("../core/success.response");
 const scheduleService = require("../services/schedule.service");
 const scheduleValidation = require("../validations/schedule.validation");
@@ -148,22 +149,26 @@ const updateMobilize = async (req, res) => {
   }
 };
 
-const registerSchedule = async (req, res) => {
+const registerSchedule = async (req, res, next) => {
   try {
     const { error, value } = scheduleValidation.registerSchedule.validate(req.body);
-    if (error) return res.status(400).json({ success: false, error: error.message });
+    if (error) {
+      throw new BadRequestError(error.message);
+    }
 
     const { user_id, week_start, schedules } = value;
 
     const exists = await scheduleService.checkUserExists(user_id);
     if (!exists) return res.status(404).json({ success: false, error: "User not found" });
 
-    await scheduleService.registerSchedule(user_id, week_start, schedules);
+    const response = await scheduleService.registerSchedule(user_id, week_start, schedules);
 
-    res.json({ success: true, message: `Đăng ký lịch tuần ${week_start} thành công` });
+    return new SuccessResponse({
+      message: `Đăng ký lịch tuần ${week_start} thành công`,
+      metaData: response,
+    }).send(res);
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ success: false, error: "Database error" });
+    next(error)
   }
 };
 
