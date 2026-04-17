@@ -165,7 +165,7 @@ const updateDay = async (date, payload, userId) => {
       internal_affairs ?? null,
       meal_duty ?? null,
       dqtt_leader ?? null,
-      dqcd_patrol ? JSON.stringify(dqcd_patrol) : null,
+      dqcd_patrol ? dqcd_patrol : null,
       office_duties ? JSON.stringify(office_duties) : null,
       office_columns ? JSON.stringify(office_columns) : null,
     ]
