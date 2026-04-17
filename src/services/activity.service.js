@@ -150,7 +150,6 @@ const createActivity = async (activityData) => {
             team,
             assignees,
             status,
-            completed,
             due_date,
             notes,
             report_fields,
@@ -159,7 +158,7 @@ const createActivity = async (activityData) => {
             updated_at,
             requires_dqcd
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
           `,
         [
           activity.id,
@@ -167,7 +166,6 @@ const createActivity = async (activityData) => {
           task.team,
           task.assignees,
           task.status || "pending",
-          task.completed || false,
           task.due_date,
           task.notes || null,
           JSON.stringify(task.report_fields || []),

@@ -18,7 +18,7 @@ const createActivity = {
         "mobilization_recruitment",
       )
       .required(),
-    location: Joi.string(),
+    location: Joi.string().allow("", null),
     document_number: Joi.string().allow("", null),
     status: Joi.string()
       .valid("pending", "in_progress", "completed")
@@ -34,7 +34,6 @@ const createActivity = {
           status: Joi.string()
             .valid("pending", "in_progress", "completed")
             .default("pending"),
-          completed: Joi.boolean().default(false),
           due_date: Joi.string().required(),
           notes: Joi.string().allow("", null),
           reportFields: Joi.array().items(
