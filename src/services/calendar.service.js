@@ -22,7 +22,7 @@ class CalendarService {
     const teamFilterClause = !isCommander ? "AND $3 = ANY(t.team)" : "";
 
     if (!isCommander) {
-      values.push(user?.team || "");
+      values.push(user?.department || "");
     }
 
     const query = [

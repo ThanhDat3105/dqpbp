@@ -4,7 +4,7 @@ const db = require('../config/db');
 const bcrypt = require('bcrypt');
 
 const SAFE_COLUMNS = `
-  id, name, team, address, lat, lng,
+  id, name, department_id, address, lat, lng,
   phone, cccd, email, role,
   is_active, last_login_at, created_at, updated_at,
   unit_code, managed_units
@@ -67,7 +67,7 @@ const getById = async (id) => {
 
 // ─── 3. Create user ──────────────────────────────────────────────────────────
 const create = async (data) => {
-  const { name, email, password, team, address, lat, lng, phone, cccd, role, unit_code, managed_units } = data;
+  const { name, email, password, department, address, lat, lng, phone, cccd, role, unit_code, managed_units } = data;
 
   // Check duplicate email
   const { rows: existing } = await db.query(
@@ -84,14 +84,14 @@ const create = async (data) => {
 
   const { rows } = await db.query(
     `INSERT INTO users
-       (name, email, password_hash, team, address, lat, lng, phone, cccd, role, unit_code, managed_units)
+       (name, email, password_hash, department_id, address, lat, lng, phone, cccd, role, unit_code, managed_units)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING ${SAFE_COLUMNS}`,
     [
       name,
       email,
       password_hash,
-      team ?? null,
+      department ?? null,
       address ?? null,
       lat ?? null,
       lng ?? null,
@@ -109,13 +109,17 @@ const create = async (data) => {
 // ─── 4. Update user ──────────────────────────────────────────────────────────
 // Only updates provided fields. email and password_hash are NOT updatable here.
 const UPDATABLE_FIELDS = [
-  'name', 'team', 'address', 'lat', 'lng', 'phone',
+  'name', 'department_id', 'address', 'lat', 'lng', 'phone',
   'cccd', 'role', 'unit_code', 'managed_units', 'is_active',
 ];
 
 const update = async (id, data) => {
   // Ensure user exists
   await getById(id);
+
+  if (data.department !== undefined) {
+    data.department_id = data.department;
+  }
 
   const setClauses = [];
   const values = [];

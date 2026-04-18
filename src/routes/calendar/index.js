@@ -8,7 +8,7 @@ const { authentication } = require("../../middlewares/auth.middleware");
 // GET /api/calendar?view=month&date=YYYY-MM-DD
 router.get(
   "/",
-  authentication,        // populate req.user with DB-verified role/team
+  authentication,        // populate req.user with DB-verified role/department
   validate(getCalendar), // validate query params view + date
   calendarController.getCalendar
 );

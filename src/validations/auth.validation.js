@@ -18,8 +18,8 @@ const register = {
       "string.min": "password must be at least 6 characters",
       "any.required": "password is required",
     }),
-    team: Joi.string().trim().max(100).required().messages({
-      "any.required": "team is required",
+    department: Joi.number().integer().required().messages({
+      "any.required": "department is required",
     }),
     role: Joi.string()
       .valid(...ROLES)

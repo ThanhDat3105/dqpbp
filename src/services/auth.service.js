@@ -18,9 +18,10 @@ const {
 
 const findUserByEmail = async (email) => {
   const { rows } = await pool.query(
-    `SELECT id, name, email, password_hash, role, team, is_active
-     FROM users
-     WHERE email = $1
+    `SELECT u.id, u.name, u.email, u.password_hash, u.role, u.department_id, d.code AS department, u.is_active
+     FROM users u
+     LEFT JOIN departments d ON u.department_id = d.id
+     WHERE u.email = $1
      LIMIT 1`,
     [email],
   );
@@ -78,7 +79,7 @@ const login = async ({ email, password }) => {
       id: user.id,
       name: user.name,
       role: user.role,
-      team: user.team,
+      department: user.department,
     },
   };
 };
@@ -209,9 +210,10 @@ const logout = async (token) => {
 
 const getMe = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT id, name, role, team
-     FROM users
-     WHERE id = $1 AND is_active = true
+    `SELECT u.id, u.name, u.role, d.code AS department
+     FROM users u
+     LEFT JOIN departments d ON u.department_id = d.id
+     WHERE u.id = $1 AND u.is_active = true
      LIMIT 1`,
     [userId],
   );
@@ -223,7 +225,7 @@ const register = async ({
   name,
   email,
   password,
-  team,
+  department,
   role,
   phone,
   address,
@@ -237,12 +239,16 @@ const register = async ({
   // 2. Hash password
   const passwordHash = await hashPassword(password);
 
-  // 3. Insert user
   const { rows } = await pool.query(
-    `INSERT INTO users (name, email, password_hash, role, team, phone, address, is_active, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
-     RETURNING id, name, email, role, team`,
-    [name, email, passwordHash, role, team, phone || null, address || null],
+    `WITH new_user AS (
+       INSERT INTO users (name, email, password_hash, role, department_id, phone, address, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
+       RETURNING id, name, email, role, department_id
+     )
+     SELECT u.*, d.code AS department
+     FROM new_user u
+     LEFT JOIN departments d ON u.department_id = d.id`,
+    [name, email, passwordHash, role, department, phone || null, address || null],
   );
 
   const user = rows[0];
@@ -288,7 +294,7 @@ const register = async ({
       id: user.id,
       name: user.name,
       role: user.role,
-      team: user.team,
+      department: user.department,
     },
   };
 };
