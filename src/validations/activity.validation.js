@@ -12,13 +12,13 @@ const createActivity = {
     department: Joi.string()
       .valid(
         "administration_office",
-        "planning",
+        "advise",
         "political_affairs",
         "logistics",
         "mobilization_recruitment",
       )
       .required(),
-    location: Joi.string(),
+    location: Joi.string().allow("", null),
     document_number: Joi.string().allow("", null),
     status: Joi.string()
       .valid("pending", "in_progress", "completed")

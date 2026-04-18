@@ -22,6 +22,18 @@ const getActivities = async (filter, option) => {
     newFilter.end_date_lte = filter.to_date;
   }
 
+  // GROUP FILTER LOGIC
+  let groupFilterSQL = "";
+  if (filter.group === 'overdue') {
+    groupFilterSQL = " AND a.end_date < CURRENT_DATE AND a.status != 'completed'";
+  } else if (filter.group === 'this_week') {
+    groupFilterSQL = " AND a.end_date >= CURRENT_DATE AND a.end_date <= CURRENT_DATE + INTERVAL '7 days' AND a.status != 'completed'";
+  } else if (filter.group === 'upcoming') {
+    groupFilterSQL = " AND a.end_date > CURRENT_DATE + INTERVAL '7 days' AND a.status != 'completed'";
+  } else if (filter.group === 'completed') {
+    groupFilterSQL = " AND a.status = 'completed'";
+  }
+
   return await paginate({
     pool,
     table: `
@@ -29,19 +41,52 @@ const getActivities = async (filter, option) => {
         SELECT 
           a.*,
           COALESCE(
-            json_agg(
-              json_build_object(
-                'id', t.id,
-                'title', t.title,
-                'status', t.status
+            (
+              SELECT json_agg(
+                json_build_object(
+                  'id', t.id,
+                  'title', t.title,
+                  'status', t.status,
+                  'due_date', t.due_date,
+                  'report_items', t.report_fields,
+                  'assignees', COALESCE(
+                    (
+                      SELECT json_agg(
+                        json_build_object(
+                          'id', u.id,
+                          'full_name', u.name,
+                          'department', u.department_id
+                        )
+                      )
+                      FROM unnest(t.assignees::text[]) AS uid
+                      JOIN users u ON u.id::text = uid
+                    ), '[]'::json
+                  )
+                )
               )
-            ) FILTER (WHERE t.id IS NOT NULL),
-            '[]'
-          ) AS tasks
+              FROM activity_tasks t
+              WHERE t.activity_id = a.id
+            ),
+            '[]'::json
+          ) AS tasks,
+          COALESCE(
+            (
+              SELECT json_agg(DISTINCT
+                jsonb_build_object(
+                  'id', u.id,
+                  'full_name', u.name,
+                  'department', u.department_id
+                )
+              )
+              FROM activity_tasks t
+              CROSS JOIN unnest(t.assignees::text[]) AS uid
+              JOIN users u ON u.id::text = uid
+              WHERE t.activity_id = a.id
+            ),
+            '[]'::json
+          ) AS assignees
         FROM activities a
-        LEFT JOIN activity_tasks t 
-          ON a.id = t.activity_id
-        GROUP BY a.id
+        WHERE 1=1 ${groupFilterSQL}
       ) AS activities
     `,
     filter: newFilter,
@@ -65,15 +110,52 @@ const getActivityById = async (id) => {
     SELECT 
       a.*,
       COALESCE(
-        json_agg(to_jsonb(t))
-        FILTER (WHERE t.id IS NOT NULL),
-        '[]'
-      ) AS tasks
+        (
+          SELECT json_agg(
+            json_build_object(
+              'id', t.id,
+              'title', t.title,
+              'status', t.status,
+              'due_date', t.due_date,
+              'report_items', t.report_fields,
+              'assignees', COALESCE(
+                (
+                  SELECT json_agg(
+                    json_build_object(
+                      'id', u.id,
+                      'full_name', u.name,
+                      'department', u.department_id
+                    )
+                  )
+                  FROM unnest(t.assignees::text[]) AS uid
+                  JOIN users u ON u.id::text = uid
+                ), '[]'::json
+              )
+            )
+          )
+          FROM activity_tasks t
+          WHERE t.activity_id = a.id
+        ),
+        '[]'::json
+      ) AS tasks,
+      COALESCE(
+        (
+          SELECT json_agg(DISTINCT
+            jsonb_build_object(
+              'id', u.id,
+              'full_name', u.name,
+              'department', u.department_id
+            )
+          )
+          FROM activity_tasks t
+          CROSS JOIN unnest(t.assignees::text[]) AS uid
+          JOIN users u ON u.id::text = uid
+          WHERE t.activity_id = a.id
+        ),
+        '[]'::json
+      ) AS assignees
     FROM activities a
-    LEFT JOIN activity_tasks t 
-      ON a.id = t.activity_id
     WHERE a.id = $1
-    GROUP BY a.id
     `,
     [id],
   );
@@ -180,7 +262,7 @@ const createActivity = async (activityData) => {
     }
   }
 
-  return activity;
+  return await getActivityById(activity.id);
 };
 
 const updateStatusActivity = async (id, status) => {

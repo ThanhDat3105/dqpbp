@@ -4,7 +4,7 @@ const Joi = require("joi");
 
 const VALID_TEAMS = [
   "administration_office",
-  "planning",
+  "advise",
   "political_affairs",
   "logistics",
   "mobilization_recruitment",
