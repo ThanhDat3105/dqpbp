@@ -9,6 +9,7 @@ const scheduleRoute = require("./schedule");
 const schedulesRoute = require("./schedules");
 const userRoute = require("./user");
 const personnelRoute = require("./personnel");
+const youthRoute = require("./youth");
 
 router.use('/activities', activityRoute);
 router.use('/activities-task', activityTaskRoute);
@@ -18,4 +19,5 @@ router.use('/schedule', scheduleRoute);
 router.use('/schedules', schedulesRoute);
 router.use('/users', userRoute);
 router.use('/personnel', personnelRoute);
+router.use('/youth', youthRoute);
 module.exports = router;
