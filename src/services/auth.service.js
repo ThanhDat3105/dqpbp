@@ -210,7 +210,7 @@ const logout = async (token) => {
 
 const getMe = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT u.id, u.name, u.role, d.code AS department
+    `SELECT u.id, u.name, u.role, u.military_rank, d.code AS department
      FROM users u
      LEFT JOIN departments d ON u.department_id = d.id
      WHERE u.id = $1 AND u.is_active = true

@@ -1,44 +1,62 @@
-'use strict';
+"use strict";
 
-const { SuccessResponse } = require('../core/success.response');
-const userService = require('../services/user.service');
+const { SuccessResponse } = require("../core/success.response");
+const userService = require("../services/user.service");
 
 // ─── Status code helper ───────────────────────────────────────────────────────
-const getStatus = (message = '') => {
+const getStatus = (message = "") => {
   const msg = message.toLowerCase();
-  if (msg.includes('không tìm thấy') || msg.includes('not found')) return 404;
-  if (msg.includes('đã tồn tại') || msg.includes('duplicate')) return 409;
+  if (msg.includes("không tìm thấy") || msg.includes("not found")) return 404;
+  if (msg.includes("đã tồn tại") || msg.includes("duplicate")) return 409;
   return 500;
 };
 
 // ─── GET /api/users ───────────────────────────────────────────────────────────
-const getAll = async (req, res) => {
+// Ví dụ trong UserController.js
+
+const getAll = async (req, res, next) => {
   try {
-    const { role, excludeRole, isActive, search } = req.query;
+    // Lấy query từ URL (VD: /api/users?departmentCode=IT01)
+    const { role, isActive, search, departmentCode, unitCode } = req.query;
 
-    const params = {
-      // role có thể là string hoặc string[] tùy Express parse
-      role: role ? (Array.isArray(role) ? role : [role]) : undefined,
-      excludeRole,
-      isActive: isActive !== undefined ? isActive === 'true' : undefined,
+    const departmentCodes = Array.isArray(departmentCode)
+      ? departmentCode
+      : departmentCode
+        ? [departmentCode]
+        : [];
+
+    const users = await userService.getAll({
+      role,
+      isActive,
       search,
-    };
+      departmentCodes,
+      unitCode,
+    });
 
-    if (role) params.role = role;
-    if (excludeRole) params.excludeRole = excludeRole;
-    if (isActive !== undefined) {
-      params.isActive = isActive === 'true';
-    }
-    if (search) params.search = search;
+    res.status(200).json({
+      success: true,
+      data: users,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
 
-    const data = await userService.getAll(params);
+const getAvailableUsers = async (req, res, next) => {
+  try {
+    const { start_date, end_date } = req.query;
 
-    return new SuccessResponse({
-      message: "Get all user successfully",
-      metaData: data,
-    }).send(res);
-  } catch (err) {
-    res.status(getStatus(err.message)).json({ success: false, error: err.message });
+    const users = await userService.getAvailableUsers({
+      start_date,
+      end_date,
+    });
+
+    res.status(200).json({
+      success: true,
+      data: users,
+    });
+  } catch (error) {
+    next(error);
   }
 };
 
@@ -48,7 +66,9 @@ const getById = async (req, res) => {
     const data = await userService.getById(Number(req.params.id));
     res.json({ success: true, data });
   } catch (err) {
-    res.status(getStatus(err.message)).json({ success: false, error: err.message });
+    res
+      .status(getStatus(err.message))
+      .json({ success: false, error: err.message });
   }
 };
 
@@ -60,14 +80,16 @@ const create = async (req, res) => {
     if (!name || !email || !password) {
       return res.status(400).json({
         success: false,
-        error: 'name, email và password là bắt buộc',
+        error: "name, email và password là bắt buộc",
       });
     }
 
     const data = await userService.create(req.body);
     res.status(201).json({ success: true, data });
   } catch (err) {
-    res.status(getStatus(err.message)).json({ success: false, error: err.message });
+    res
+      .status(getStatus(err.message))
+      .json({ success: false, error: err.message });
   }
 };
 
@@ -77,7 +99,9 @@ const update = async (req, res) => {
     const data = await userService.update(Number(req.params.id), req.body);
     res.json({ success: true, data });
   } catch (err) {
-    res.status(getStatus(err.message)).json({ success: false, error: err.message });
+    res
+      .status(getStatus(err.message))
+      .json({ success: false, error: err.message });
   }
 };
 
@@ -87,7 +111,9 @@ const toggleActive = async (req, res) => {
     const data = await userService.toggleActive(Number(req.params.id));
     res.json({ success: true, data });
   } catch (err) {
-    res.status(getStatus(err.message)).json({ success: false, error: err.message });
+    res
+      .status(getStatus(err.message))
+      .json({ success: false, error: err.message });
   }
 };
 
@@ -97,8 +123,18 @@ const remove = async (req, res) => {
     const data = await userService.remove(Number(req.params.id));
     res.json(data);
   } catch (err) {
-    res.status(getStatus(err.message)).json({ success: false, error: err.message });
+    res
+      .status(getStatus(err.message))
+      .json({ success: false, error: err.message });
   }
 };
 
-module.exports = { getAll, getById, create, update, toggleActive, remove };
+module.exports = {
+  getAll,
+  getAvailableUsers,
+  getById,
+  create,
+  update,
+  toggleActive,
+  remove,
+};

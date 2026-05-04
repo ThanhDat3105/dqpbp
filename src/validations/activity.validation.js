@@ -35,6 +35,7 @@ const createActivity = {
             .valid("pending", "in_progress", "completed")
             .default("pending"),
           completed: Joi.boolean().default(false),
+          start_date: Joi.date().required(),
           due_date: Joi.string().required(),
           notes: Joi.string().allow("", null),
           reportFields: Joi.array().items(
@@ -56,7 +57,7 @@ const createActivity = {
   }),
 };
 
-const ACTIVITY_STATUSES = ["pending", "in_progress", "completed"];
+const ACTIVITY_STATUSES = ["pending", "in_progress", "completed", "cancelled", "overdue"];
 
 const getActivities = {
   query: Joi.object()

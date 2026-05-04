@@ -1,110 +1,186 @@
 const pool = require("../config/db");
-const { NotFoundError, BadRequestError } = require("../core/error.response");
+const {
+  NotFoundError,
+  BadRequestError,
+  ForbiddenError,
+} = require("../core/error.response");
 const paginate = require("../plugins/paginate.plugin");
 
 const getActivities = async (filter, option) => {
-  let newFilter = {};
-
-  if (filter.month && filter.year) {
-    newFilter.start_date_from = new Date(filter.year, filter.month - 1, 1);
-    newFilter.start_date_to = new Date(filter.year, filter.month, 1); // exclusive
+  // ROLE-BASED ACCESS
+  if (filter.role === "DQCD") {
+    return { results: [], total: 0, page: 1, limit: 10 };
   }
 
-  if (filter.status) {
-    newFilter.status = filter.status;
+  let params = [];
+  let paramIndex = 1;
+
+  let whereSQL = "WHERE 1=1";
+
+  // ===== ROLE FILTER =====
+  if (filter.role === "DQTT") {
+    whereSQL += ` AND a.department = $${paramIndex}`;
+    params.push(filter.department);
+    paramIndex++;
+  }
+
+  // ===== DATE FILTER =====
+  if (filter.month && filter.year) {
+    const start = new Date(filter.year, filter.month - 1, 1);
+    const end = new Date(filter.year, filter.month, 1);
+
+    whereSQL += ` AND a.start_date >= $${paramIndex}`;
+    params.push(start);
+    paramIndex++;
+
+    whereSQL += ` AND a.start_date < $${paramIndex}`;
+    params.push(end);
+    paramIndex++;
   }
 
   if (filter.from_date) {
-    newFilter.end_date_from = filter.from_date;
+    whereSQL += ` AND a.end_date >= $${paramIndex}`;
+    params.push(filter.from_date);
+    paramIndex++;
   }
 
   if (filter.to_date) {
-    newFilter.end_date_lte = filter.to_date;
+    whereSQL += ` AND a.end_date <= $${paramIndex}`;
+    params.push(filter.to_date);
+    paramIndex++;
   }
 
-  // GROUP FILTER LOGIC
-  let groupFilterSQL = "";
-  if (filter.group === 'overdue') {
-    groupFilterSQL = " AND a.end_date < CURRENT_DATE AND a.status != 'completed'";
-  } else if (filter.group === 'this_week') {
-    groupFilterSQL = " AND a.end_date >= CURRENT_DATE AND a.end_date <= CURRENT_DATE + INTERVAL '7 days' AND a.status != 'completed'";
-  } else if (filter.group === 'upcoming') {
-    groupFilterSQL = " AND a.end_date > CURRENT_DATE + INTERVAL '7 days' AND a.status != 'completed'";
-  } else if (filter.group === 'completed') {
-    groupFilterSQL = " AND a.status = 'completed'";
+  // ===== STATUS FILTER =====
+  if (filter.status) {
+    if (filter.status === "overdue") {
+      whereSQL += `
+      AND DATE(a.end_date) < CURRENT_DATE
+      AND a.status != 'cancelled'
+    `;
+    } else {
+      whereSQL += ` AND a.status = $${paramIndex}`;
+      params.push(filter.status);
+      paramIndex++;
+    }
   }
 
-  return await paginate({
-    pool,
-    table: `
-      (
-        SELECT 
-          a.*,
-          COALESCE(
-            (
-              SELECT json_agg(
-                json_build_object(
-                  'id', t.id,
-                  'title', t.title,
-                  'status', t.status,
-                  'due_date', t.due_date,
-                  'report_items', t.report_fields,
-                  'assignees', COALESCE(
-                    (
-                      SELECT json_agg(
-                        json_build_object(
-                          'id', u.id,
-                          'full_name', u.name,
-                          'department', u.department_id
-                        )
-                      )
-                      FROM unnest(t.assignees::text[]) AS uid
-                      JOIN users u ON u.id::text = uid
-                    ), '[]'::json
+  // ===== GROUP FILTER =====
+  if (filter.group === "overdue") {
+    whereSQL += ` AND a.end_date < CURRENT_DATE AND a.status != 'completed'`;
+  } else if (filter.group === "this_week") {
+    whereSQL += ` AND a.end_date >= CURRENT_DATE 
+                  AND a.end_date <= CURRENT_DATE + INTERVAL '7 days' 
+                  AND a.status != 'completed'`;
+  } else if (filter.group === "upcoming") {
+    whereSQL += ` AND a.end_date > CURRENT_DATE + INTERVAL '7 days' 
+                  AND a.status != 'completed'`;
+  } else if (filter.group === "completed") {
+    whereSQL += ` AND a.status = 'completed'`;
+  }
+
+  // ===== MAIN QUERY =====
+  const query = `
+    SELECT 
+      a.*,
+      COALESCE(
+        (
+          SELECT json_agg(
+            json_build_object(
+              'id', t.id,
+              'title', t.title,
+              'status', t.status,
+              'due_date', t.due_date,
+              'report_fields', t.report_fields,
+              'assignees', COALESCE(
+                (
+                  SELECT json_agg(
+                    json_build_object(
+                      'id', u.id,
+                      'name', u.name,
+                      'department', u.department_id
+                    )
                   )
-                )
+                  FROM task_assignees ta
+                  JOIN users u ON u.id = ta.user_id
+                  WHERE ta.task_id = t.id
+                ), '[]'::json
               )
-              FROM activity_tasks t
-              WHERE t.activity_id = a.id
-            ),
-            '[]'::json
-          ) AS tasks,
-          COALESCE(
-            (
-              SELECT json_agg(DISTINCT
-                jsonb_build_object(
-                  'id', u.id,
-                  'full_name', u.name,
-                  'department', u.department_id
-                )
-              )
-              FROM activity_tasks t
-              CROSS JOIN unnest(t.assignees::text[]) AS uid
-              JOIN users u ON u.id::text = uid
-              WHERE t.activity_id = a.id
-            ),
-            '[]'::json
-          ) AS assignees
-        FROM activities a
-        WHERE 1=1 ${groupFilterSQL}
-      ) AS activities
-    `,
-    filter: newFilter,
-    page: Number(option.page) || 1,
-    limit: Number(option.limit) || 10,
-    rawOrderBy: `
-      end_date ASC,
-      CASE status
-        WHEN 'pending'     THEN 0
-        WHEN 'in_progress' THEN 1
-        WHEN 'completed'   THEN 2
-        ELSE 99
-      END ASC
-    `,
-  });
+            )
+          )
+          FROM activity_tasks t
+          WHERE t.activity_id = a.id
+        ),
+        '[]'::json
+      ) AS tasks,
+
+      COALESCE(
+        (
+          SELECT json_agg(DISTINCT
+            jsonb_build_object(
+              'id', u.id,
+              'name', u.name,
+              'department', u.department_id
+            )
+          )
+          FROM activity_tasks t
+          JOIN task_assignees ta ON ta.task_id = t.id
+          JOIN users u ON u.id = ta.user_id
+          WHERE t.activity_id = a.id
+        ),
+        '[]'::json
+      ) AS assignees
+
+    FROM activities a
+    ${whereSQL}
+  `;
+
+  // ===== COUNT QUERY (QUAN TRỌNG NHẤT) =====
+  const countQuery = `
+    SELECT COUNT(*) FROM activities a
+    ${whereSQL}
+  `;
+
+  const page = Number(option.page) || 1;
+  const limit = Number(option.limit) || 10;
+  const offset = (page - 1) * limit;
+
+  const client = await pool.connect();
+
+  try {
+    // total đúng 100%
+    const countResult = await client.query(countQuery, params);
+    const total = Number(countResult.rows[0].count);
+
+    // data query + sort + paginate
+    const dataResult = await client.query(
+      `
+      ${query}
+      ORDER BY 
+        a.end_date ASC,
+        CASE a.status
+          WHEN 'pending'     THEN 0
+          WHEN 'in_progress' THEN 1
+          WHEN 'completed'   THEN 2
+          ELSE 99
+        END ASC,
+        a.id ASC
+      LIMIT ${limit} OFFSET ${offset}
+      `,
+      params,
+    );
+
+    return {
+      results: dataResult.rows,
+      total,
+      page,
+      limit,
+    };
+  } finally {
+    client.release();
+  }
 };
 
-const getActivityById = async (id) => {
+const getActivityById = async (id, user_id, role) => {
   const result = await pool.query(
     `
     SELECT 
@@ -116,19 +192,22 @@ const getActivityById = async (id) => {
               'id', t.id,
               'title', t.title,
               'status', t.status,
+              'start_date', t.start_date,
               'due_date', t.due_date,
-              'report_items', t.report_fields,
+              'report_fields', t.report_fields,
+              'requires_dqcd', t.requires_dqcd,
               'assignees', COALESCE(
                 (
                   SELECT json_agg(
                     json_build_object(
                       'id', u.id,
-                      'full_name', u.name,
+                      'name', u.name,
                       'department', u.department_id
                     )
                   )
-                  FROM unnest(t.assignees::text[]) AS uid
-                  JOIN users u ON u.id::text = uid
+                  FROM task_assignees ta
+                  JOIN users u ON u.id = ta.user_id
+                  WHERE ta.task_id = t.id
                 ), '[]'::json
               )
             )
@@ -143,13 +222,13 @@ const getActivityById = async (id) => {
           SELECT json_agg(DISTINCT
             jsonb_build_object(
               'id', u.id,
-              'full_name', u.name,
+              'name', u.name,
               'department', u.department_id
             )
           )
           FROM activity_tasks t
-          CROSS JOIN unnest(t.assignees::text[]) AS uid
-          JOIN users u ON u.id::text = uid
+          JOIN task_assignees ta ON ta.task_id = t.id
+          JOIN users u ON u.id = ta.user_id
           WHERE t.activity_id = a.id
         ),
         '[]'::json
@@ -164,9 +243,21 @@ const getActivityById = async (id) => {
     throw new NotFoundError("Activity not found");
   }
 
-  return result.rows[0];
-};
+  const activity = result.rows[0];
 
+  const privilegedRoles = ["CHI_HUY", "TO_TRUONG"];
+  const isPrivileged = privilegedRoles.includes(role);
+
+  if (!isPrivileged) {
+    const isAssigned = activity.assignees?.some((a) => a.id === user_id);
+
+    if (!isAssigned) {
+      throw new ForbiddenError("Bạn không có quyền truy cập hoạt động này");
+    }
+  }
+
+  return activity;
+};
 const createActivity = async (activityData) => {
   const {
     name,
@@ -224,15 +315,14 @@ const createActivity = async (activityData) => {
 
   if (tasks.length > 0) {
     for (const task of tasks) {
-      await pool.query(
+      const taskResult = await pool.query(
         `
           INSERT INTO activity_tasks (
             activity_id,
             title,
             team,
-            assignees,
             status,
-            completed,
+            start_date,
             due_date,
             notes,
             report_fields,
@@ -241,15 +331,15 @@ const createActivity = async (activityData) => {
             updated_at,
             requires_dqcd
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          RETURNING id
           `,
         [
           activity.id,
           task.title,
           task.team,
-          task.assignees,
           task.status || "pending",
-          task.completed || false,
+          task.start_date,
           task.due_date,
           task.notes || null,
           JSON.stringify(task.report_fields || []),
@@ -259,6 +349,20 @@ const createActivity = async (activityData) => {
           task.requires_dqcd || false,
         ],
       );
+
+      const insertedTaskId = taskResult.rows[0].id;
+
+      if (Array.isArray(task.assignees) && task.assignees.length > 0) {
+        for (const userId of task.assignees) {
+          await pool.query(
+            `
+              INSERT INTO task_assignees (task_id, user_id, role)
+              VALUES ($1, $2, $3)
+            `,
+            [insertedTaskId, userId, task.role || "DQTT"],
+          );
+        }
+      }
     }
   }
 

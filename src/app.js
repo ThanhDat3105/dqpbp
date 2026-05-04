@@ -10,6 +10,7 @@ const hpp = require("hpp");
 
 const { authLimiter } = require("./middlewares/rateLimiter");
 const router = require("./routes/api");
+const notificationRouter = require("./routes/notification/notification.routes");
 // const routerAdmin = require("./routes/admin");
 
 // const swagger = require("./configs/swagger/swagger");
@@ -77,6 +78,7 @@ app.use("/api/auth", authLimiter);
 
 // ROUTES
 app.use("/api", router);
+app.use("/api/notifications", notificationRouter);
 
 // 404 HANDLER
 app.use((req, res, next) => {

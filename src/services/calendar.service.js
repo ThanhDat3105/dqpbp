@@ -16,14 +16,25 @@ class CalendarService {
       );
     }
 
-    const isCommander = user?.role === "CHI_HUY";
+    // Chỉ DQTT và DQCD mới bị lọc theo assignee
+    const restrictedRoles = ["DQTT", "DQCD"];
+    const isRestricted = restrictedRoles.includes(user?.role);
+
     const values = [range.startDate, range.endDate];
 
-    const teamFilterClause = !isCommander ? "AND $3 = ANY(t.team)" : "";
+    const assigneeFilterClause = isRestricted
+      ? "AND EXISTS (SELECT 1 FROM task_assignees ta WHERE ta.task_id = t.id AND ta.user_id = $3)"
+      : "";
 
-    if (!isCommander) {
-      values.push(user?.department || "");
+    if (isRestricted) {
+      const userId = parseInt(user?.user_id);
+      if (isNaN(userId)) {
+        throw new BadRequestError("Invalid user id");
+      }
+      values.push(userId);
     }
+
+    const isCommander = user?.role === "CHI_HUY" || user?.role === "TO_TRUONG";
 
     const query = [
       "SELECT",
@@ -34,19 +45,19 @@ class CalendarService {
       "  t.team,",
       "  t.activity_id,",
       "  a.name AS activity_name,",
-      "  a.start_date",                         // <-- thêm start_date từ activities
+      "  a.start_date",
       "FROM activity_tasks t",
       "INNER JOIN activities a ON a.id = t.activity_id",
-      // Task overlap với calendar range nếu: start_date <= range.endDate AND due_date >= range.startDate
       "WHERE a.start_date <= $2 AND t.due_date >= $1",
       "AND t.status NOT IN ('canceled', 'completed')",
-      teamFilterClause,
+      assigneeFilterClause,
       "ORDER BY t.due_date ASC, t.id ASC",
     ]
       .filter(Boolean)
       .join("\n");
 
     const { rows } = await pool.query(query, values);
+
     const groupedData = buildPrefilledDateMap(range.startDate, range.endDate);
 
     if (!rows.length) {
@@ -56,7 +67,6 @@ class CalendarService {
     const activityMapByDate = new Map();
 
     rows.forEach((row) => {
-      // Clamp: chỉ render trong khoảng calendar hiện tại
       const taskStart = moment.max(
         moment(row.start_date).startOf("day"),
         moment(range.startDate).startOf("day"),
@@ -66,7 +76,6 @@ class CalendarService {
         moment(range.endDate).startOf("day"),
       );
 
-      // Loop qua từng ngày trong khoảng [taskStart, taskEnd]
       for (
         let day = taskStart.clone();
         day.isSameOrBefore(taskEnd);
@@ -79,7 +88,6 @@ class CalendarService {
         }
 
         if (!isCommander) {
-          // Non-commander: flat list, tránh duplicate cùng task_id trong 1 ngày
           const alreadyAdded = groupedData[dateKey].some(
             (t) => t.task_id === row.task_id,
           );
@@ -95,7 +103,6 @@ class CalendarService {
           continue;
         }
 
-        // Commander: group by activity
         if (!activityMapByDate.has(dateKey)) {
           activityMapByDate.set(dateKey, new Map());
         }
@@ -113,7 +120,6 @@ class CalendarService {
           groupedData[dateKey].push(activityBucket);
         }
 
-        // Tránh duplicate task trong cùng 1 activity bucket của 1 ngày
         const alreadyAdded = activityBucket.tasks.some(
           (t) => t.task_id === row.task_id,
         );

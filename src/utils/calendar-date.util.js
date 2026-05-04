@@ -70,10 +70,15 @@ const getWeekEnd = (start) => {
   return d.toISOString().split("T")[0];
 };
 
+const formatDateTime = (date) => {
+  return date.toISOString().slice(0, 19).replace("T", " ");
+};
+
 module.exports = {
   DATE_FORMAT,
   SUPPORTED_CALENDAR_VIEWS,
   getCalendarDateRange,
   buildPrefilledDateMap,
-  getWeekEnd
+  getWeekEnd,
+  formatDateTime,
 };

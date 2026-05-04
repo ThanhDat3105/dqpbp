@@ -9,9 +9,22 @@ const activityService = require("../services/activity.service");
  */
 const getActivities = async (req, res, next) => {
   try {
-    const { month, year, status, from_date, to_date, page, limit, group } = req.query;
+    const { id: userId, role, department } = req.user;
 
-    const filter = { month, year, status, from_date, to_date, group };
+    const { month, year, status, from_date, to_date, page, limit, group } =
+      req.query;
+
+    const filter = {
+      month,
+      year,
+      status,
+      from_date,
+      to_date,
+      group,
+      userId,
+      role,
+      department,
+    };
     const option = { page, limit };
 
     const data = await activityService.getActivities(filter, option);
@@ -29,7 +42,13 @@ const getActivities = async (req, res, next) => {
  */
 const getActivityById = async (req, res, next) => {
   try {
-    const data = await activityService.getActivityById(req.params.id);
+    const { user_id, role } = req.user;
+
+    const data = await activityService.getActivityById(
+      req.params.id,
+      user_id,
+      role,
+    );
     return new SuccessResponse({
       message: "Activity retrieved successfully",
       metaData: data,

@@ -3,6 +3,7 @@
 require("dotenv").config();
 const app = require("./app");
 const pool = require("./config/db"); // PostgreSQL pool
+const { startDailyDigestJob } = require("./jobs/dailyDigest.job");
 
 const PORT = process.env.PORT || 5000;
 
@@ -17,6 +18,7 @@ async function startServer() {
       console.log(
         `Management Ward Swagger start with: http://localhost:${PORT}/api-docs`,
       );
+      startDailyDigestJob();
     });
 
     // Graceful shutdown

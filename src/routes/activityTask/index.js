@@ -5,6 +5,8 @@ const activityTaskController = require("../../controllers/activity-task.controll
 const { activityTaskValidation } = require("../../validations");
 const { authentication } = require("../../middlewares/auth.middleware");
 
+router.get("/", authentication, activityTaskController.getTaskList);
+
 router.post(
   "/",
   authentication,
@@ -25,6 +27,18 @@ router.patch(
   authentication,
   validate(activityTaskValidation.updateActivityTask),
   activityTaskController.updateActivityTask,
+);
+
+router.post(
+  "/tasks/:taskId/assign-dqcd",
+  authentication,
+  activityTaskController.assignDQCD,
+);
+
+router.put(
+  "/tasks/:taskId/assign-dqcd",
+  authentication,
+  activityTaskController.updateDQCDAssignees,
 );
 
 module.exports = router;
