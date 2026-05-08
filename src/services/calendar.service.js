@@ -98,6 +98,7 @@ class CalendarService {
               due_date: moment(row.due_date).format("YYYY-MM-DD HH:mm:ss"),
               status: row.status,
               activity_id: row.activity_id,
+              start_date: moment(row.start_date).format("YYYY-MM-DD HH:mm:ss"),
             });
           }
           continue;
@@ -114,6 +115,7 @@ class CalendarService {
           activityBucket = {
             activity_id: row.activity_id,
             activity_name: row.activity_name,
+            start_date: moment(row.start_date).format("YYYY-MM-DD HH:mm:ss"),
             tasks: [],
           };
           dateActivityMap.set(row.activity_id, activityBucket);
