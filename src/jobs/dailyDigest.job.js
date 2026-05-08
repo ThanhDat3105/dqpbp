@@ -26,4 +26,26 @@ const startDailyDigestJob = () => {
   console.log("[DailyDigest] Scheduled at 05:00 ICT daily");
 };
 
-module.exports = { startDailyDigestJob };
+const startDeadlineReminderJob = () => {
+  cron.schedule(
+    "*/30 * * * *",
+    async () => {
+      console.log(
+        "[DeadlineReminder] Running at",
+        new Date().toLocaleString("vi-VN"),
+      );
+      try {
+        await notificationService.checkDeadlineReminders();
+      } catch (err) {
+        console.error("[DeadlineReminder] Error:", err?.message || err);
+      }
+    },
+    {
+      timezone: "Asia/Ho_Chi_Minh",
+    },
+  );
+
+  console.log("[DeadlineReminder] Scheduled every 30 minutes");
+};
+
+module.exports = { startDailyDigestJob, startDeadlineReminderJob };

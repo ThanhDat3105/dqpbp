@@ -258,7 +258,8 @@ const getActivityById = async (id, user_id, role) => {
 
   return activity;
 };
-const createActivity = async (activityData) => {
+
+const createActivity = async (activityData, user_id, role) => {
   const {
     name,
     work_type,
@@ -366,7 +367,7 @@ const createActivity = async (activityData) => {
     }
   }
 
-  return await getActivityById(activity.id);
+  return await getActivityById(activity.id, user_id, role);
 };
 
 const updateStatusActivity = async (id, status) => {
