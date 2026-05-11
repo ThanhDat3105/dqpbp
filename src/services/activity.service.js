@@ -210,7 +210,14 @@ const getActivityById = async (id, user_id, role) => {
                   WHERE ta.task_id = t.id
                 ), '[]'::json
               )
-            )
+            ) ORDER BY 
+              CASE t.status
+                WHEN 'in_progress' THEN 1
+                WHEN 'pending'     THEN 2
+                WHEN 'completed'   THEN 3
+                ELSE 4
+              END ASC,
+              t.start_date ASC
           )
           FROM activity_tasks t
           WHERE t.activity_id = a.id
