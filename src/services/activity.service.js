@@ -19,8 +19,14 @@ const getActivities = async (filter, option) => {
 
   // ===== ROLE FILTER =====
   if (filter.role === "DQTT") {
-    whereSQL += ` AND a.department = $${paramIndex}`;
-    params.push(filter.department);
+    whereSQL += ` AND EXISTS (
+      SELECT 1
+      FROM activity_tasks t
+      JOIN task_assignees ta ON ta.task_id = t.id
+      WHERE t.activity_id = a.id
+        AND ta.user_id = $${paramIndex}
+    )`;
+    params.push(filter.userId);
     paramIndex++;
   }
 

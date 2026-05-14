@@ -45,13 +45,13 @@ const getKpiData = async ({
 
   const values = [targetRoles, from, to];
   const whereClauses = [
-    "u.role = ANY($1)",
+    "ta.role = ANY($1)",
     "t.due_date::date BETWEEN $2::date AND $3::date",
   ];
 
   if (effectiveUserId) {
     values.push(effectiveUserId);
-    whereClauses.push(`u.id = $${values.length}`);
+    whereClauses.push(`ta.user_id = $${values.length}`);
   }
 
   const query = `
@@ -102,6 +102,71 @@ const getKpiData = async ({
   });
 };
 
+const getKpiSummary = async ({
+  from,
+  to,
+  role,
+  user_id,
+  requesterId,
+  requesterRole,
+}) => {
+  const targetRoles = normalizeRoles(role);
+
+  const effectiveUserId =
+    requesterRole === "DQCD" ? requesterId : user_id ?? null;
+
+  const values = [targetRoles, from, to];
+  const whereClauses = [
+    "ta.role = ANY($1)",
+    "t.due_date::date BETWEEN $2::date AND $3::date",
+  ];
+
+  if (effectiveUserId) {
+    values.push(effectiveUserId);
+    whereClauses.push(`ta.user_id = $${values.length}`);
+  }
+
+  const query = `
+    SELECT
+      COUNT(*) FILTER (WHERE t.status != 'cancelled') AS total_assigned,
+      COUNT(*) FILTER (WHERE t.status = 'completed') AS completed,
+      COUNT(*) FILTER (
+        WHERE t.status = 'completed'
+        AND t.completed_at IS NOT NULL
+        AND t.completed_at <= t.due_date
+      ) AS completed_on_time,
+      COUNT(*) FILTER (
+        WHERE t.status = 'completed'
+        AND t.completed_at IS NOT NULL
+        AND t.completed_at > t.due_date
+      ) AS completed_late,
+      COUNT(*) FILTER (
+        WHERE t.status IN ('pending', 'in_progress')
+      ) AS not_completed,
+      COUNT(*) FILTER (
+        WHERE t.status IN ('pending', 'in_progress')
+        AND t.due_date::date < CURRENT_DATE
+      ) AS overdue,
+      COUNT(*) FILTER (WHERE t.status = 'cancelled') AS cancelled
+    FROM task_assignees ta
+    JOIN activity_tasks t ON t.id = ta.task_id
+    WHERE ${whereClauses.join(" AND ")};
+  `;
+
+  const { rows } = await db.query(query, values);
+  const row = rows[0] || {};
+
+  return {
+    total_assigned: Number(row.total_assigned) || 0,
+    completed: Number(row.completed) || 0,
+    completed_on_time: Number(row.completed_on_time) || 0,
+    completed_late: Number(row.completed_late) || 0,
+    not_completed: Number(row.not_completed) || 0,
+    overdue: Number(row.overdue) || 0,
+    cancelled: Number(row.cancelled) || 0,
+  };
+};
+
 const getKpiList = async (filters = {}) => {
   const users = await userService.getAll({
     ...filters,
@@ -114,4 +179,5 @@ const getKpiList = async (filters = {}) => {
 module.exports = {
   getKpiData,
   getKpiList,
+  getKpiSummary,
 };

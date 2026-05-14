@@ -132,6 +132,7 @@ class CalendarService {
             due_date: moment(row.due_date).format("YYYY-MM-DD HH:mm:ss"),
             status: row.status,
             team: row.team,
+            start_date: moment(row.start_date).format("YYYY-MM-DD HH:mm:ss"),
           });
         }
       }

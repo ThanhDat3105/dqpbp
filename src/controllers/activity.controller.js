@@ -9,7 +9,7 @@ const activityService = require("../services/activity.service");
  */
 const getActivities = async (req, res, next) => {
   try {
-    const { id: userId, role, department } = req.user;
+    const { user_id: userId, role, department } = req.user;
 
     const { month, year, status, from_date, to_date, page, limit, group } =
       req.query;

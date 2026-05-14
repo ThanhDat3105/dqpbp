@@ -79,6 +79,39 @@ const parseDateRange = ({ period, from, to }) => {
   return getRangeByPeriod(normalizedPeriod);
 };
 
+const parseSummaryRange = ({ period, from, to, month, year }) => {
+  if (month !== undefined && month !== null && month !== "") {
+    const monthValue = Number(month);
+
+    if (!Number.isInteger(monthValue) || monthValue < 1 || monthValue > 12) {
+      throw new BadRequestError("month must be an integer between 1 and 12");
+    }
+
+    const now = new Date();
+    const yearValue =
+      year === undefined || year === null || year === ""
+        ? now.getFullYear()
+        : Number(year);
+
+    if (!Number.isInteger(yearValue)) {
+      throw new BadRequestError("year must be a valid integer");
+    }
+
+    const monthDate = new Date(yearValue, monthValue - 1, 1);
+
+    if (!isValid(monthDate)) {
+      throw new BadRequestError("month/year must form a valid date");
+    }
+
+    return {
+      from: format(startOfMonth(monthDate), "yyyy-MM-dd"),
+      to: format(endOfMonth(monthDate), "yyyy-MM-dd"),
+    };
+  }
+
+  return parseDateRange({ period, from, to });
+};
+
 const getKpi = async (req, res, next) => {
   try {
     const { period, from, to, role, user_id } = req.query;
@@ -121,6 +154,54 @@ const getKpi = async (req, res, next) => {
   }
 };
 
+const getKpiSummary = async (req, res, next) => {
+  try {
+    const { period, from, to, role, user_id, month, year } = req.query;
+
+    const requesterId = req.user?.id ?? req.user?.user_id;
+    const requesterRole = req.user?.role;
+
+    if (!requesterId) {
+      throw new ForbiddenError("Authentication required");
+    }
+
+    const allowedRoles = ["DQTT", "DQCD"];
+    if (!allowedRoles.includes(requesterRole)) {
+      throw new ForbiddenError("Only DQTT/DQCD can access KPI summary");
+    }
+
+    if (
+      requesterRole === "DQCD" &&
+      user_id !== undefined &&
+      String(user_id) !== String(requesterId)
+    ) {
+      throw new ForbiddenError("DQCD can only view own KPI");
+    }
+
+    const dateRange = parseSummaryRange({ period, from, to, month, year });
+
+    const summary = await kpiService.getKpiSummary({
+      from: dateRange.from,
+      to: dateRange.to,
+      role,
+      user_id,
+      requesterId,
+      requesterRole,
+    });
+
+    return new SuccessResponse({
+      message: "KPI summary retrieved successfully",
+      metaData: {
+        period: dateRange,
+        summary,
+      },
+    }).send(res);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getKpi,
+  getKpiSummary,
 };
