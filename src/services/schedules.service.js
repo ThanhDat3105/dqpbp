@@ -1,13 +1,28 @@
 // services/scheduleService.js
-const db = require('../config/db');
+const db = require("../config/db");
+
+const DEFAULT_OFFICE_COLUMNS = [
+  {
+    code: "hdnd_ubnd",
+    label: "Trực trụ sở HĐND-UBND",
+  },
+  {
+    code: "du",
+    label: "Đảng uỷ",
+  },
+  {
+    code: "pktht",
+    label: "Phòng kinh tế hạ tầng",
+  },
+];
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 const formatRow = (r) => ({
   date: r.date
     ? new Date(r.date.getTime() - r.date.getTimezoneOffset() * 60000)
-      .toISOString()
-      .slice(0, 10)
+        .toISOString()
+        .slice(0, 10)
     : r.date,
   commander: r.commander,
   duty_officer: r.duty_officer,
@@ -51,7 +66,7 @@ const getWeekByDate = async (dateInput) => {
     `SELECT * FROM schedule_days
      WHERE date >= $1 AND date <= $2
      ORDER BY date`,
-    [weekStart, weekEnd]
+    [weekStart, weekEnd],
   );
 
   return {
@@ -66,18 +81,18 @@ const getWeekByDate = async (dateInput) => {
 
 // target: 'current' | 'next' | 'YYYY-MM-DD' (ngày bất kỳ trong tuần cần tạo)
 // Chỉ INSERT ngày chưa tồn tại, không overwrite data đã có
-const createWeek = async (target = 'next', userId) => {
+const createWeek = async (target = "next", userId) => {
   const base = new Date();
 
   let referenceDate;
-  if (target === 'current') {
+  if (target === "current") {
     referenceDate = base.toISOString().slice(0, 10);
-  } else if (target === 'next') {
+  } else if (target === "next") {
     const next = new Date(base);
     next.setDate(base.getDate() + 7);
     referenceDate = next.toISOString().slice(0, 10);
   } else {
-    referenceDate = target; // ISO string
+    referenceDate = target;
   }
 
   const { weekStart, weekEnd } = getWeekRange(referenceDate);
@@ -89,19 +104,9 @@ const createWeek = async (target = 'next', userId) => {
     return d.toISOString().slice(0, 10);
   });
 
-  // Kế thừa office_columns từ tuần hiện tại (nếu có)
-  const { weekStart: curStart, weekEnd: curEnd } = getWeekRange();
-  const { rows: curRows } = await db.query(
-    `SELECT office_columns FROM schedule_days
-     WHERE date >= $1 AND date <= $2
-     LIMIT 1`,
-    [curStart, curEnd]
-  );
-  const inheritedColumns = curRows[0]?.office_columns ?? [];
-
   const client = await db.connect();
   try {
-    await client.query('BEGIN');
+    await client.query("BEGIN");
 
     let created = 0;
     let skipped = 0;
@@ -111,15 +116,15 @@ const createWeek = async (target = 'next', userId) => {
         `INSERT INTO schedule_days (date, office_columns, created_by, updated_at)
          VALUES ($1, $2, $3, NOW())
          ON CONFLICT (date) DO NOTHING`,
-        [date, JSON.stringify(inheritedColumns), userId ?? null]
+        [date, JSON.stringify(DEFAULT_OFFICE_COLUMNS), userId ?? null],
       );
       result.rowCount > 0 ? created++ : skipped++;
     }
 
-    await client.query('COMMIT');
+    await client.query("COMMIT");
     return { success: true, weekStart, weekEnd, created, skipped, dates };
   } catch (err) {
-    await client.query('ROLLBACK');
+    await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
@@ -140,7 +145,6 @@ const updateDay = async (date, payload, userId) => {
     dqtt_leader,
     dqcd_patrol,
     office_duties,
-    office_columns,
   } = payload;
 
   const { rows } = await db.query(
@@ -153,7 +157,6 @@ const updateDay = async (date, payload, userId) => {
        dqtt_leader      = COALESCE($7, dqtt_leader),
        dqcd_patrol      = COALESCE($8, dqcd_patrol),
        office_duties    = COALESCE($9, office_duties),
-       office_columns   = COALESCE($10, office_columns),
        updated_at       = NOW()
      WHERE date = $1
      RETURNING *`,
@@ -167,8 +170,7 @@ const updateDay = async (date, payload, userId) => {
       dqtt_leader ?? null,
       dqcd_patrol ? dqcd_patrol : null,
       office_duties ? JSON.stringify(office_duties) : null,
-      office_columns ? JSON.stringify(office_columns) : null,
-    ]
+    ],
   );
 
   if (rows.length === 0) {
