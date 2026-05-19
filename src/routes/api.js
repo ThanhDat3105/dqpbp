@@ -10,6 +10,8 @@ const schedulesRoute = require("./schedules");
 const userRoute = require("./user");
 const personnelRoute = require("./personnel");
 const youthRoute = require("./youth");
+const nguonRoute = require("./nguon");
+const qndbRoute = require("./qndb");
 const department = require("./department");
 const kpiRoute = require("./kpi");
 
@@ -22,6 +24,8 @@ router.use('/schedules', schedulesRoute);
 router.use('/users', userRoute);
 router.use('/personnel', personnelRoute);
 router.use('/youth', youthRoute);
+router.use('/nguon', nguonRoute);
+router.use('/qndb', qndbRoute);
 router.use('/department', department);
 router.use('/kpi', kpiRoute);
 module.exports = router;

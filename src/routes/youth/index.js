@@ -53,4 +53,13 @@ router.delete(
     controller.remove,
 );
 
+// POST /api/youth/:id/to-nguon
+// Role: DQTT, CHI_HUY, ADMIN
+router.post(
+    "/:id/to-nguon",
+    requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
+    validate(getById),
+    controller.promoteToNguon,
+);
+
 module.exports = router;
