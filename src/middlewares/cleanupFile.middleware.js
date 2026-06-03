@@ -34,6 +34,8 @@ const cleanupFileOnError = (err, req, res, next) => {
  * @param {string} filePath
  */
 const cleanupFile = (filePath) => {
+  if (!filePath) return;
+
   try {
     if (fs.existsSync(filePath)) {
       fs.unlinkSync(filePath);

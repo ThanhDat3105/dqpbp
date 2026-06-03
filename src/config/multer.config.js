@@ -95,6 +95,12 @@ const uploadDisk = multer({
   fileFilter: mediaFilter,
 });
 
+const uploadMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 50 * 1024 * 1024 },
+  fileFilter: mediaFilter,
+});
+
 // ===== EXCEL =====
 const excelMimeTypes = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -137,6 +143,12 @@ const documentFilter = (req, file, cb) => {
 
 const uploadDocument = multer({
   storage,
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: documentFilter,
+});
+
+const uploadDocumentMemory = multer({
+  storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: documentFilter,
 });
@@ -194,5 +206,7 @@ module.exports = {
   uploadDisk,
   uploadExcel,
   uploadDocument,
+  uploadMemory,
+  uploadDocumentMemory,
   handleMulterError,
 };

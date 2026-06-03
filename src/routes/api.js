@@ -17,6 +17,7 @@ const department = require("./department");
 const kpiRoute = require("./kpi");
 const websiteRoute = require("./website");
 const chatRoute = require("./chat");
+const uploadRoute = require("./upload");
 
 router.use("/activities", activityRoute);
 router.use("/activity-templates", activityTemplateRoute);
@@ -34,5 +35,6 @@ router.use("/department", department);
 router.use("/kpi", kpiRoute);
 router.use("/chat", chatRoute);
 router.use("/website", websiteRoute);
+router.use("/upload", uploadRoute);
 
 module.exports = router;
