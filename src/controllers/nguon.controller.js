@@ -2,6 +2,7 @@
 
 const { SuccessResponse, CREATED } = require("../core/success.response");
 const nguonService = require("../services/nguon.service");
+const { cleanupFile } = require("../middlewares/cleanupFile.middleware");
 
 const getList = async (req, res, next) => {
   try {
@@ -44,6 +45,20 @@ const create = async (req, res, next) => {
   }
 };
 
+const importExcel = async (req, res, next) => {
+  try {
+    const data = await nguonService.importNguonFromExcel(req.file?.path);
+    return new CREATED({
+      message: "Import nguon from Excel successfully",
+      metaData: data,
+    }).send(res);
+  } catch (err) {
+    return next(err);
+  } finally {
+    if (req.file?.path) cleanupFile(req.file.path);
+  }
+};
+
 const update = async (req, res, next) => {
   try {
     const data = await nguonService.updateNguon(Number(req.params.id), req.body);
@@ -68,4 +83,4 @@ const remove = async (req, res, next) => {
   }
 };
 
-module.exports = { getList, getById, create, update, remove };
+module.exports = { getList, getById, create, importExcel, update, remove };

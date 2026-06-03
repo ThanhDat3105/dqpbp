@@ -1,0 +1,9 @@
+ALTER TABLE website_articles
+  ADD COLUMN IF NOT EXISTS excerpt TEXT,
+  ADD COLUMN IF NOT EXISTS author VARCHAR(200);
+
+ALTER TABLE website_documents
+  ADD COLUMN IF NOT EXISTS file_type VARCHAR(10) DEFAULT 'PDF';
+
+ALTER TABLE website_slides
+  ADD COLUMN IF NOT EXISTS description TEXT;

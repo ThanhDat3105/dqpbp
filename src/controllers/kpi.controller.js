@@ -79,24 +79,40 @@ const parseDateRange = ({ period, from, to }) => {
   return getRangeByPeriod(normalizedPeriod);
 };
 
-const parseSummaryRange = ({ period, from, to, month, year }) => {
-  if (month !== undefined && month !== null && month !== "") {
+const parseYear = (year) => {
+  if (year === undefined || year === null || year === "") {
+    return new Date().getFullYear();
+  }
+
+  const yearValue = Number(year);
+
+  if (!Number.isInteger(yearValue) || yearValue < 1) {
+    throw new BadRequestError("year must be a valid integer");
+  }
+
+  return yearValue;
+};
+
+const hasValue = (value) =>
+  value !== undefined && value !== null && value !== "";
+
+const parseSummaryRange = ({ period, from, to, month, quarter, year }) => {
+  if (hasValue(from) || hasValue(to)) {
+    return parseDateRange({ period, from, to });
+  }
+
+  if (hasValue(month) && hasValue(quarter)) {
+    throw new BadRequestError("month and quarter cannot be used together");
+  }
+
+  if (hasValue(month)) {
     const monthValue = Number(month);
 
     if (!Number.isInteger(monthValue) || monthValue < 1 || monthValue > 12) {
       throw new BadRequestError("month must be an integer between 1 and 12");
     }
 
-    const now = new Date();
-    const yearValue =
-      year === undefined || year === null || year === ""
-        ? now.getFullYear()
-        : Number(year);
-
-    if (!Number.isInteger(yearValue)) {
-      throw new BadRequestError("year must be a valid integer");
-    }
-
+    const yearValue = parseYear(year);
     const monthDate = new Date(yearValue, monthValue - 1, 1);
 
     if (!isValid(monthDate)) {
@@ -106,6 +122,40 @@ const parseSummaryRange = ({ period, from, to, month, year }) => {
     return {
       from: format(startOfMonth(monthDate), "yyyy-MM-dd"),
       to: format(endOfMonth(monthDate), "yyyy-MM-dd"),
+    };
+  }
+
+  if (hasValue(quarter)) {
+    const quarterValue = Number(quarter);
+
+    if (!Number.isInteger(quarterValue) || quarterValue < 1 || quarterValue > 4) {
+      throw new BadRequestError("quarter must be an integer between 1 and 4");
+    }
+
+    const yearValue = parseYear(year);
+    const quarterDate = new Date(yearValue, (quarterValue - 1) * 3, 1);
+
+    if (!isValid(quarterDate)) {
+      throw new BadRequestError("quarter/year must form a valid date");
+    }
+
+    return {
+      from: format(startOfQuarter(quarterDate), "yyyy-MM-dd"),
+      to: format(endOfQuarter(quarterDate), "yyyy-MM-dd"),
+    };
+  }
+
+  if (hasValue(year)) {
+    const yearValue = parseYear(year);
+    const yearDate = new Date(yearValue, 0, 1);
+
+    if (!isValid(yearDate)) {
+      throw new BadRequestError("year must form a valid date");
+    }
+
+    return {
+      from: format(startOfYear(yearDate), "yyyy-MM-dd"),
+      to: format(endOfYear(yearDate), "yyyy-MM-dd"),
     };
   }
 
@@ -156,7 +206,7 @@ const getKpi = async (req, res, next) => {
 
 const getKpiSummary = async (req, res, next) => {
   try {
-    const { period, from, to, role, user_id, month, year } = req.query;
+    const { period, from, to, role, user_id, month, quarter, year } = req.query;
 
     const requesterId = req.user?.id ?? req.user?.user_id;
     const requesterRole = req.user?.role;
@@ -165,10 +215,10 @@ const getKpiSummary = async (req, res, next) => {
       throw new ForbiddenError("Authentication required");
     }
 
-    const allowedRoles = ["DQTT", "DQCD"];
-    if (!allowedRoles.includes(requesterRole)) {
-      throw new ForbiddenError("Only DQTT/DQCD can access KPI summary");
-    }
+    // const allowedRoles = ["DQTT", "DQCD"];
+    // if (!allowedRoles.includes(requesterRole)) {
+    //   throw new ForbiddenError("Only DQTT/DQCD can access KPI summary");
+    // }
 
     if (
       requesterRole === "DQCD" &&
@@ -178,11 +228,22 @@ const getKpiSummary = async (req, res, next) => {
       throw new ForbiddenError("DQCD can only view own KPI");
     }
 
-    const dateRange = parseSummaryRange({ period, from, to, month, year });
+    const dateRange = parseSummaryRange({
+      period,
+      from,
+      to,
+      month,
+      quarter,
+      year,
+    });
 
     const summary = await kpiService.getKpiSummary({
+      period,
       from: dateRange.from,
       to: dateRange.to,
+      month,
+      quarter,
+      year,
       role,
       user_id,
       requesterId,

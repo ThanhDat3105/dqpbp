@@ -3,6 +3,7 @@
 const { CREATED, SuccessResponse } = require("../core/success.response");
 const { NotFoundError, ForbiddenError } = require("../core/error.response");
 const authService = require("../services/auth.service");
+const { cleanupFile } = require("../middlewares/cleanupFile.middleware");
 
 /**
  * POST /api/auth/register
@@ -76,7 +77,9 @@ const getMe = async (req, res, next) => {
 
     // Middleware already confirmed is_active, but guard against race conditions
     if (!user) {
-      return next(new ForbiddenError("Account not found or has been deactivated"));
+      return next(
+        new ForbiddenError("Account not found or has been deactivated"),
+      );
     }
 
     return new SuccessResponse({
@@ -88,4 +91,15 @@ const getMe = async (req, res, next) => {
   }
 };
 
-module.exports = { register, login, refreshToken, logout, getMe };
+const importExcel = async (req, res, next) => {
+  try {
+    const data = await authService.importUsersFromExcel(req.file?.path);
+    res.status(201).json({ success: true, data });
+  } catch (err) {
+    next(err);
+  } finally {
+    if (req.file?.path) cleanupFile(req.file.path);
+  }
+};
+
+module.exports = { register, login, refreshToken, logout, getMe, importExcel };

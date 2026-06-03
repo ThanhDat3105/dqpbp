@@ -8,6 +8,10 @@ const { authentication } = require("../../middlewares/auth.middleware");
 const { requireRole } = require("../../middlewares/role.middleware");
 const validate = require("../../middlewares/validate");
 const {
+  uploadExcel,
+  handleMulterError,
+} = require("../../config/multer.config");
+const {
   getList,
   getById,
   create,
@@ -22,6 +26,15 @@ router.get("/list", validate(getList), controller.getList);
 
 // GET /api/nguon/:id
 router.get("/:id", validate(getById), controller.getById);
+
+// POST /api/nguon
+router.post(
+  "/import-excel",
+  requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
+  uploadExcel.single("file"),
+  handleMulterError,
+  controller.importExcel,
+);
 
 // POST /api/nguon
 router.post("/", requireRole(["DQTT", "CHI_HUY", "ADMIN"]), validate(create), controller.create);

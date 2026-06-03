@@ -51,13 +51,19 @@ const createActivity = {
         }),
       )
       .default([]),
-    created_by: Joi.string().required(),
+    created_by: Joi.alternatives([Joi.string(), Joi.number()]).required(),
     created_at: Joi.date().default(() => new Date(), new Date()),
     updated_at: Joi.date().default(() => new Date(), new Date()),
   }),
 };
 
-const ACTIVITY_STATUSES = ["pending", "in_progress", "completed", "cancelled", "overdue"];
+const ACTIVITY_STATUSES = [
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+  "overdue",
+];
 
 const getActivities = {
   query: Joi.object()
@@ -77,12 +83,14 @@ const getActivities = {
       from_date: Joi.string()
         .pattern(/^\d{4}-\d{2}-\d{2}$/)
         .messages({
-          "string.pattern.base": "from_date must be a valid ISO date (YYYY-MM-DD)",
+          "string.pattern.base":
+            "from_date must be a valid ISO date (YYYY-MM-DD)",
         }),
       to_date: Joi.string()
         .pattern(/^\d{4}-\d{2}-\d{2}$/)
         .messages({
-          "string.pattern.base": "to_date must be a valid ISO date (YYYY-MM-DD)",
+          "string.pattern.base":
+            "to_date must be a valid ISO date (YYYY-MM-DD)",
         }),
 
       // ─── Pagination

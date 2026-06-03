@@ -337,7 +337,6 @@ const checkDeadlineReminders = async () => {
   );
 
   for (const row of tasks6h.rows) {
-    // Insert notification cho user
     await pool.query(
       `
       INSERT INTO notifications (user_id, type, title, body, metadata)
@@ -358,7 +357,6 @@ const checkDeadlineReminders = async () => {
     );
   }
 
-  // Mark reminded_6h = true (batch update)
   if (tasks6h.rows.length > 0) {
     const taskIds = [...new Set(tasks6h.rows.map((r) => r.task_id))];
     await pool.query(
@@ -370,20 +368,19 @@ const checkDeadlineReminders = async () => {
     );
   }
 
-  // --- 1h REMINDER: cảnh báo cấp trên ---
+  // --- 1h REMINDER: cảnh báo người chịu trách nhiệm (created_by) ---
   const in1h = new Date(now.getTime() + 1 * 60 * 60 * 1000);
 
   const tasks1h = await pool.query(
     `
-    SELECT
+    SELECT DISTINCT ON (atk.id)
       atk.id        AS task_id,
       atk.title,
       atk.due_date,
       atk.activity_id,
       a.name        AS activity_name,
-      ta.user_id    AS assignee_id,
-      u.name        AS assignee_name,
-      u.department_id
+      a.created_by  AS responsible_user_id,
+      u.name        AS assignee_name
     FROM activity_tasks atk
     JOIN task_assignees ta ON ta.task_id = atk.id
     JOIN users u ON u.id = ta.user_id
@@ -397,42 +394,30 @@ const checkDeadlineReminders = async () => {
     [in1h.toISOString(), now.toISOString()],
   );
 
-  for (const row of tasks1h.rows) {
-    // Lấy TO_TRUONG và CHI_HUY cùng department
-    const supervisors = await pool.query(
-      `
-      SELECT id FROM users
-      WHERE role IN ('TO_TRUONG', 'CHI_HUY')
-        AND department_id = $1
-        AND is_active = TRUE
-    `,
-      [row.department_id],
-    );
+  console.log(tasks1h.rows, "tasks1h");
 
-    for (const sup of supervisors.rows) {
-      await pool.query(
-        `
-        INSERT INTO notifications (user_id, type, title, body, metadata)
-        VALUES ($1, 'deadline_critical', $2, $3, $4::jsonb)
-      `,
-        [
-          sup.id,
-          `🚨 Sắp trễ hạn: ${row.title}`,
-          `Nhiệm vụ "${row.title}" của ${row.assignee_name} còn 1 tiếng là đến hạn, chưa hoàn thành.`,
-          JSON.stringify({
-            task_id: row.task_id,
-            activity_id: row.activity_id,
-            assignee_id: row.assignee_id,
-            assignee_name: row.assignee_name,
-            due_date: row.due_date,
-          }),
-        ],
-      );
-    }
+  for (const row of tasks1h.rows) {
+    await pool.query(
+      `
+      INSERT INTO notifications (user_id, type, title, body, metadata)
+      VALUES ($1, 'deadline_critical', $2, $3, $4::jsonb)
+    `,
+      [
+        row.responsible_user_id,
+        `🚨 Sắp trễ hạn: ${row.title}`,
+        `Nhiệm vụ "${row.title}" của ${row.assignee_name} còn 1 tiếng là đến hạn, chưa hoàn thành.`,
+        JSON.stringify({
+          task_id: row.task_id,
+          activity_id: row.activity_id,
+          assignee_name: row.assignee_name,
+          due_date: row.due_date,
+        }),
+      ],
+    );
   }
 
   if (tasks1h.rows.length > 0) {
-    const taskIds = [...new Set(tasks1h.rows.map((r) => r.task_id))];
+    const taskIds = tasks1h.rows.map((r) => r.task_id);
     await pool.query(
       `
       UPDATE activity_tasks SET reminded_1h = TRUE
@@ -443,7 +428,6 @@ const checkDeadlineReminders = async () => {
   }
 
   console.log(tasks6h.rows, tasks1h.rows);
-
   console.log(
     `[DeadlineReminder] 6h: ${tasks6h.rows.length} | 1h: ${tasks1h.rows.length}`,
   );

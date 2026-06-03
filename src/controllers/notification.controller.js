@@ -106,11 +106,12 @@ const markAllAsRead = async (req, res, next) => {
 const triggerDigest = async (req, res) => {
   try {
     await notificationService.generateDigestForAllUsers();
+    await notificationService.checkDeadlineReminders();
     res.json({ message: "Digest triggered for all users" });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
-}
+};
 
 module.exports = {
   getNotifications,

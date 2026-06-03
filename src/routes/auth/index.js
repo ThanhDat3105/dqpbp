@@ -3,6 +3,11 @@ const AuthController = require("../../controllers/auth.controller");
 const validate = require("../../middlewares/validate");
 const { authValidation } = require("../../validations");
 const { authentication } = require("../../middlewares/auth.middleware");
+const { requireRole } = require("../../middlewares/role.middleware");
+const {
+  uploadExcel,
+  handleMulterError,
+} = require("../../config/multer.config");
 
 const router = express.Router();
 
@@ -20,5 +25,13 @@ router.post(
   AuthController.refreshToken,
 );
 router.get("/me", authentication, AuthController.getMe);
+router.post(
+  "/import-excel",
+  authentication,
+  requireRole(["ADMIN", "CHI_HUY"]),
+  uploadExcel.single("file"),
+  handleMulterError,
+  AuthController.importExcel,
+);
 
 module.exports = router;

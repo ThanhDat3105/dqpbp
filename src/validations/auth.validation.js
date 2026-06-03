@@ -2,7 +2,7 @@
 
 const Joi = require("joi");
 
-const ROLES = ["DQTT", "CHI_HUY"];
+const ROLES = ["DQTT", "CHI_HUY", "TO_TRUONG", "DQCD", "ADMIN"];
 
 const register = {
   body: Joi.object().keys({
@@ -18,9 +18,7 @@ const register = {
       "string.min": "password must be at least 6 characters",
       "any.required": "password is required",
     }),
-    department: Joi.number().integer().required().messages({
-      "any.required": "department is required",
-    }),
+    department: Joi.number().integer(),
     role: Joi.string()
       .valid(...ROLES)
       .required()

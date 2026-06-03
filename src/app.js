@@ -74,7 +74,7 @@ app.get("/health", (req, res) => {
 // app.use("/api-docs", swagger.serve, swagger.setup);
 
 // RATE LIMIT AUTH
-app.use("/api/auth", authLimiter);
+// app.use("/api/auth", authLimiter);
 
 // ROUTES
 app.use("/api", router);
@@ -102,5 +102,33 @@ app.use((error, req, res, next) => {
     stack: process.env.NODE_ENV === "development" ? error.stack : undefined,
   });
 });
+
+// print all route path
+
+function collectRoutes(stack, prefix = "") {
+  const routes = [];
+  stack.forEach((layer) => {
+    if (layer.route) {
+      const methods = Object.keys(layer.route.methods)
+        .filter((m) => layer.route.methods[m])
+        .map((m) => m.toUpperCase())
+        .join(",");
+      routes.push({ method: methods, path: prefix + layer.route.path });
+      return;
+    }
+    if (layer.name === "router" && layer.handle?.stack) {
+      let segment = "";
+      if (layer.regexp && layer.regexp.source !== "^\\/?$") {
+        segment = layer.regexp.source
+          .replace("^\\/", "/")
+          .replace("\\/?(?=\\/|$)", "")
+          .replace(/\\\//g, "/")
+          .replace("(?:/(?=$))", "");
+      }
+      routes.push(...collectRoutes(layer.handle.stack, prefix + segment));
+    }
+  });
+  return routes;
+}
 
 module.exports = app;

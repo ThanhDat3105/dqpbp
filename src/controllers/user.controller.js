@@ -16,8 +16,23 @@ const getStatus = (message = "") => {
 
 const getAll = async (req, res, next) => {
   try {
-    // Lấy query từ URL (VD: /api/users?departmentCode=IT01)
-    const { role, isActive, search, departmentCode, unitCode } = req.query;
+    const {
+      role,
+      "role[]": roleArray,
+      isActive,
+      search,
+      departmentCode,
+      unitCode,
+    } = req.query;
+
+    // Ưu tiên role[] nếu có, fallback về role
+    const rawRole = roleArray ?? role;
+
+    const roles = Array.isArray(rawRole)
+      ? rawRole
+      : rawRole
+        ? [rawRole]
+        : undefined;
 
     const departmentCodes = Array.isArray(departmentCode)
       ? departmentCode
@@ -26,7 +41,7 @@ const getAll = async (req, res, next) => {
         : [];
 
     const users = await userService.getAll({
-      role,
+      role: roles,
       isActive,
       search,
       departmentCodes,

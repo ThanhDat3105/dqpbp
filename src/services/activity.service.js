@@ -319,7 +319,7 @@ const createActivity = async (activityData, user_id, role) => {
       document_number,
       attached_files ? JSON.stringify(attached_files) : null,
       status,
-      created_by,
+      created_by ? String(created_by) : 'admin',
       created_at,
       updated_at,
     ],

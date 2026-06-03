@@ -1,10 +1,89 @@
 "use strict";
 
 const db = require("../config/db");
+const XLSX = require("xlsx");
 const {
   NotFoundError,
-  ConflictRequestError,
+  BadRequestError,
 } = require("../core/error.response");
+
+const normalizeHeader = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const headerAliases = {
+  full_name: ["full_name", "ho_va_ten", "ho_ten", "ten"],
+  date_of_birth: [
+    "date_of_birth",
+    "ngay_sinh",
+    "ngay_thang_nam_sinh",
+    "ngay_thang_nam",
+  ],
+  neighborhood: ["neighborhood", "khu_pho", "khupho"],
+  permanent_address: ["permanent_address", "dia_chi_thuong_tru", "dia_chi"],
+  education_level: ["education_level", "trinh_do", "trinh_do_van_hoa", "hoc_van"],
+  is_registered: ["is_registered", "da_lam_ho_so", "trang_thai"],
+};
+
+const getCellText = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const parseBoolean = (value) => {
+  const raw = getCellText(value).toLowerCase();
+  return ["true", "1", "yes", "y", "co", "có", "da", "đã", "x"].includes(raw);
+};
+
+const buildImportHeaderMap = (headerRow) => {
+  const normalizedHeaders = headerRow.map(normalizeHeader);
+  return Object.entries(headerAliases).reduce((map, [field, aliases]) => {
+    const index = normalizedHeaders.findIndex((header) =>
+      aliases.includes(header),
+    );
+    if (index >= 0) map[field] = index;
+    return map;
+  }, {});
+};
+
+const parseDateOfBirth = (value) => {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  if (typeof value === "number") {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) {
+      return `${parsed.y}-${String(parsed.m).padStart(2, "0")}-${String(parsed.d).padStart(2, "0")}`;
+    }
+  }
+
+  const raw = getCellText(value);
+  if (!raw) return null;
+
+  const isoMatch = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const dmyMatch = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (dmyMatch) {
+    const [, day, month, year] = dmyMatch;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const parsedDate = new Date(raw);
+  if (Number.isNaN(parsedDate.getTime())) return null;
+
+  return parsedDate.toISOString().slice(0, 10);
+};
 
 // ─── 1. List với filter + pagination ─────────────────────────────────────────
 const fetchList = async (filters) => {
@@ -97,6 +176,126 @@ const createYouth = async (payload) => {
   return rows[0];
 };
 
+const importYouthFromExcel = async (filePath) => {
+  if (!filePath) {
+    throw new BadRequestError("Vui long chon file Excel");
+  }
+
+  const workbook = XLSX.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    throw new BadRequestError("File Excel khong co sheet du lieu");
+  }
+
+  const excelRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+    header: 1,
+    defval: "",
+    raw: false,
+  });
+
+  if (excelRows.length < 2) {
+    throw new BadRequestError("File Excel can co dong tieu de va du lieu");
+  }
+
+  const headerMap = buildImportHeaderMap(excelRows[0]);
+  if (headerMap.full_name === undefined) {
+    throw new BadRequestError("File Excel phai co cot full_name hoac Ho ten");
+  }
+  if (headerMap.date_of_birth === undefined) {
+    throw new BadRequestError("File Excel phai co cot date_of_birth hoac Ngay sinh");
+  }
+
+  const rowsToInsert = [];
+  const errors = [];
+
+  excelRows.slice(1).forEach((row, index) => {
+    const rowNumber = index + 2;
+    const fullName = getCellText(row[headerMap.full_name]);
+    const dateOfBirth = parseDateOfBirth(row[headerMap.date_of_birth]);
+
+    if (!row.some((cell) => getCellText(cell))) return;
+
+    if (!fullName) {
+      errors.push({ row: rowNumber, message: "Thieu full_name" });
+      return;
+    }
+    if (!dateOfBirth) {
+      errors.push({ row: rowNumber, message: "date_of_birth khong hop le" });
+      return;
+    }
+
+    rowsToInsert.push({
+      row: rowNumber,
+      full_name: fullName,
+      date_of_birth: dateOfBirth,
+      neighborhood:
+        headerMap.neighborhood === undefined
+          ? null
+          : getCellText(row[headerMap.neighborhood]) || null,
+      permanent_address:
+        headerMap.permanent_address === undefined
+          ? null
+          : getCellText(row[headerMap.permanent_address]) || null,
+      education_level:
+        headerMap.education_level === undefined
+          ? null
+          : getCellText(row[headerMap.education_level]) || null,
+      is_registered:
+        headerMap.is_registered === undefined
+          ? false
+          : parseBoolean(row[headerMap.is_registered]),
+    });
+  });
+
+  if (rowsToInsert.length === 0) {
+    return {
+      imported: 0,
+      failed: errors.length,
+      errors,
+    };
+  }
+
+  const client = await db.connect();
+  const inserted = [];
+
+  try {
+    await client.query("BEGIN");
+
+    for (const item of rowsToInsert) {
+      const { rows } = await client.query(
+        `INSERT INTO youth_personnel
+          (full_name, date_of_birth, neighborhood, permanent_address, education_level, is_registered)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         RETURNING id, full_name`,
+        [
+          item.full_name,
+          item.date_of_birth,
+          item.neighborhood,
+          item.permanent_address,
+          item.education_level,
+          item.is_registered,
+        ],
+      );
+
+      inserted.push({ row: item.row, ...rows[0] });
+    }
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return {
+    imported: inserted.length,
+    failed: errors.length,
+    inserted,
+    errors,
+  };
+};
+
 // ─── 4. Update (COALESCE — chỉ update fields được gửi) ───────────────────────
 const updateYouth = async (id, payload) => {
   // Đảm bảo bản ghi tồn tại trước
@@ -183,6 +382,7 @@ module.exports = {
   fetchList,
   fetchById,
   createYouth,
+  importYouthFromExcel,
   updateYouth,
   deleteYouth,
   promoteToNguon,

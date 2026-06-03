@@ -39,23 +39,17 @@ const getAll = async (params = {}) => {
     idx++;
   }
 
-  if (params.departmentCodes.length !== 0) {
-    // CẬP NHẬT: Xử lý departmentCode dưới dạng mảng (nhiều department)
-    if (params.departmentCodes !== undefined) {
-      // Ép kiểu về mảng nếu chỉ có 1 giá trị được truyền vào
-      const deptCodes = Array.isArray(params.departmentCodes)
-        ? params.departmentCodes
-        : [params.departmentCodes];
+  if (params.departmentCodes && params.departmentCodes.length > 0) {
+    const deptCodes = Array.isArray(params.departmentCodes)
+      ? params.departmentCodes
+      : [params.departmentCodes];
 
-      // Dùng ANY() để tìm các user có department_id thuộc danh sách code được gửi lên
-      conditions.push(
-        `department_id IN (SELECT id FROM departments WHERE code = ANY($${idx++}))`,
-      );
-      values.push(deptCodes);
-    }
+    conditions.push(
+      `department_id IN (SELECT id FROM departments WHERE code = ANY($${idx++}))`,
+    );
+    values.push(deptCodes);
   }
 
-  // CẬP NHẬT: Xử lý unitCode dưới dạng mảng (nhiều unit)
   if (params.unitCode !== undefined) {
     const unitCodes = Array.isArray(params.unitCode)
       ? params.unitCode

@@ -66,6 +66,7 @@ const createActivity = async (req, res, next) => {
     const { user_id, role } = req.user;
 
     const data = await activityService.createActivity(req.body, user_id, role);
+
     return new CREATED({
       message: "Activity created successfully",
       metaData: data,

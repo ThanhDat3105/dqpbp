@@ -12,7 +12,71 @@ const {
   ConflictRequestError,
   AuthFailureError,
   NotFoundError,
+  BadRequestError,
 } = require("../core/error.response");
+
+const XLSX = require("xlsx");
+
+const IMPORT_ROLES = ["ADMIN", "CHI_HUY", "TO_TRUONG", "DQTT", "DQCD"];
+const DEPARTMENT_OPTIONAL_ROLES = ["ADMIN", "CHI_HUY", "DQCD"];
+
+const normalizeHeader = (value) =>
+  String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+const importHeaderAliases = {
+  name: ["name", "ho_ten", "ho_va_ten", "ten"],
+  email: ["email", "account", "tai_khoan", "username", "user_name"],
+  password: ["password", "mat_khau", "pass"],
+  role: ["role", "vai_tro", "quyen"],
+  military_rank: ["military_rank", "bac_ham"],
+  position: ["position", "chuc_vu"],
+  department_id: ["department_id", "don_vi_id"],
+  department_code: [
+    "department_code",
+    "department",
+    "don_vi",
+    "ma_don_vi",
+    "code",
+  ],
+  is_special: ["is_special", "special", "khong_can_don_vi", "khong_co_don_vi"],
+  phone: ["phone", "so_dien_thoai", "dien_thoai", "sdt"],
+  address: ["address", "dia_chi"],
+};
+
+const getCellText = (value) => {
+  if (value === null || value === undefined) return "";
+  return String(value).trim();
+};
+
+const buildImportHeaderMap = (headerRow) => {
+  const normalizedHeaders = headerRow.map(normalizeHeader);
+  return Object.entries(importHeaderAliases).reduce((map, [field, aliases]) => {
+    const index = normalizedHeaders.findIndex((header) =>
+      aliases.includes(header),
+    );
+    if (index >= 0) map[field] = index;
+    return map;
+  }, {});
+};
+
+const normalizeRole = (value) => {
+  const role = getCellText(value).toUpperCase();
+  return IMPORT_ROLES.includes(role) ? role : "DQCD";
+};
+
+const parseImportBoolean = (value) => {
+  const raw = getCellText(value).toLowerCase();
+  return ["true", "1", "yes", "y", "co", "có", "da", "đã", "x"].includes(raw);
+};
+
+const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 
 // ─── Helpers ─────────────────────────────────────────────────
 
@@ -210,7 +274,7 @@ const logout = async (token) => {
 
 const getMe = async (userId) => {
   const { rows } = await pool.query(
-    `SELECT u.id, u.name, u.role, u.military_rank, d.code AS department
+    `SELECT u.id, u.name, u.role, u.military_rank, d.code AS department, u.position
      FROM users u
      LEFT JOIN departments d ON u.department_id = d.id
      WHERE u.id = $1 AND u.is_active = true
@@ -236,6 +300,20 @@ const register = async ({
     throw new ConflictRequestError("Email already exists");
   }
 
+  let departmentId = null;
+  if (department) {
+    departmentId = Number(department);
+
+    const { rows: departmentRows } = await pool.query(
+      `SELECT id FROM departments WHERE id = $1 LIMIT 1`,
+      [departmentId],
+    );
+
+    if (departmentRows.length === 0) {
+      throw new BadRequestError("department does not exist");
+    }
+  }
+
   // 2. Hash password
   const passwordHash = await hashPassword(password);
 
@@ -248,7 +326,15 @@ const register = async ({
      SELECT u.*, d.code AS department
      FROM new_user u
      LEFT JOIN departments d ON u.department_id = d.id`,
-    [name, email, passwordHash, role, department, phone || null, address || null],
+    [
+      name,
+      email,
+      passwordHash,
+      role,
+      departmentId || null,
+      phone || null,
+      address || null,
+    ],
   );
 
   const user = rows[0];
@@ -299,10 +385,279 @@ const register = async ({
   };
 };
 
+const importUsersFromExcel = async (filePath) => {
+  if (!filePath) {
+    throw new BadRequestError("Vui long chon file Excel");
+  }
+
+  const workbook = XLSX.readFile(filePath);
+  const sheetName = workbook.SheetNames[0];
+  if (!sheetName) {
+    throw new BadRequestError("File Excel khong co sheet du lieu");
+  }
+
+  const excelRows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], {
+    header: 1,
+    defval: "",
+    raw: false,
+  });
+
+  if (excelRows.length < 2) {
+    throw new BadRequestError("File Excel can co dong tieu de va du lieu");
+  }
+
+  const headerMap = buildImportHeaderMap(excelRows[0]);
+  if (headerMap.email === undefined || headerMap.password === undefined) {
+    throw new BadRequestError(
+      "File Excel phai co cot email/tai_khoan va password/mat_khau",
+    );
+  }
+
+  const rowsToInsert = [];
+  const errors = [];
+  const seenEmails = new Set();
+
+  excelRows.slice(1).forEach((row, index) => {
+    const rowNumber = index + 2;
+    if (!row.some((cell) => getCellText(cell))) return;
+
+    const email = getCellText(row[headerMap.email]).toLowerCase();
+    const password = getCellText(row[headerMap.password]);
+    const name =
+      headerMap.name === undefined
+        ? email.split("@")[0]
+        : getCellText(row[headerMap.name]) || email.split("@")[0];
+    const role =
+      headerMap.role === undefined
+        ? "DQCD"
+        : normalizeRole(row[headerMap.role]);
+    const isSpecial =
+      DEPARTMENT_OPTIONAL_ROLES.includes(role) ||
+      (headerMap.is_special !== undefined &&
+        parseImportBoolean(row[headerMap.is_special]));
+
+    if (!email || !isValidEmail(email)) {
+      errors.push({ row: rowNumber, message: "Email/tai_khoan khong hop le" });
+      return;
+    }
+
+    if (seenEmails.has(email)) {
+      errors.push({
+        row: rowNumber,
+        message: "Email bi trung trong file Excel",
+      });
+      return;
+    }
+
+    if (!password || password.length < 6) {
+      errors.push({
+        row: rowNumber,
+        message: "Password phai co it nhat 6 ky tu",
+      });
+      return;
+    }
+
+    const rawDepartmentId =
+      headerMap.department_id === undefined
+        ? ""
+        : getCellText(row[headerMap.department_id]);
+    const departmentId = rawDepartmentId ? Number(rawDepartmentId) : null;
+    const departmentCode =
+      headerMap.department_code === undefined
+        ? ""
+        : getCellText(row[headerMap.department_code]);
+
+    if (
+      !isSpecial &&
+      (!departmentId || !Number.isInteger(departmentId) || departmentId <= 0) &&
+      !departmentCode
+    ) {
+      errors.push({
+        row: rowNumber,
+        message: "Thieu department_id hoac department_code/ma_don_vi",
+      });
+      return;
+    }
+
+    seenEmails.add(email);
+    rowsToInsert.push({
+      row: rowNumber,
+      name,
+      email,
+      password,
+      role,
+      is_special: isSpecial,
+      military_rank:
+        headerMap.military_rank === undefined
+          ? null
+          : getCellText(row[headerMap.military_rank]) || null,
+      position:
+        headerMap.position === undefined
+          ? null
+          : getCellText(row[headerMap.position]) || null,
+      department_id: departmentId,
+      department_code: departmentCode,
+      phone:
+        headerMap.phone === undefined
+          ? null
+          : getCellText(row[headerMap.phone]) || null,
+      address:
+        headerMap.address === undefined
+          ? null
+          : getCellText(row[headerMap.address]) || null,
+    });
+  });
+
+  if (rowsToInsert.length === 0) {
+    return {
+      imported: 0,
+      failed: errors.length,
+      errors,
+    };
+  }
+
+  const { rows: existingRows } = await pool.query(
+    `SELECT email FROM users WHERE email = ANY($1)`,
+    [rowsToInsert.map((item) => item.email)],
+  );
+  const existingEmails = new Set(
+    existingRows.map((row) => row.email.toLowerCase()),
+  );
+
+  const departmentIds = [
+    ...new Set(
+      rowsToInsert
+        .map((item) => item.department_id)
+        .filter((id) => Number.isInteger(id) && id > 0),
+    ),
+  ];
+  const departmentCodes = [
+    ...new Set(
+      rowsToInsert
+        .map((item) => item.department_code)
+        .filter(Boolean)
+        .map((code) => code.toLowerCase()),
+    ),
+  ];
+  const { rows: departmentRows } = await pool.query(
+    `SELECT id, LOWER(code) AS code
+     FROM departments
+     WHERE id = ANY($1::int[]) OR LOWER(code) = ANY($2::text[])`,
+    [departmentIds, departmentCodes],
+  );
+  const validDepartmentIds = new Set(departmentRows.map((row) => row.id));
+  const departmentIdByCode = new Map(
+    departmentRows.map((row) => [row.code, row.id]),
+  );
+
+  const validRows = rowsToInsert.filter((item) => {
+    if (existingEmails.has(item.email)) {
+      errors.push({
+        row: item.row,
+        message: "Email da ton tai trong he thong",
+      });
+      return false;
+    }
+
+    if (item.department_id && validDepartmentIds.has(item.department_id)) {
+      return true;
+    }
+
+    const departmentId = item.department_code
+      ? departmentIdByCode.get(item.department_code.toLowerCase())
+      : null;
+    if (departmentId) {
+      item.department_id = departmentId;
+      return true;
+    }
+
+    if (item.is_special) {
+      item.department_id = null;
+      return true;
+    }
+
+    errors.push({
+      row: item.row,
+      message: "department_id/department_code khong ton tai",
+    });
+    return false;
+  });
+
+  if (validRows.length === 0) {
+    return {
+      imported: 0,
+      failed: errors.length,
+      errors,
+    };
+  }
+
+  if (validRows.some((item) => item.department_id === null)) {
+    const { rows: columnRows } = await pool.query(
+      `SELECT is_nullable
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'users'
+         AND column_name = 'department_id'
+       LIMIT 1`,
+    );
+
+    if (columnRows[0]?.is_nullable === "NO") {
+      throw new BadRequestError(
+        "users.department_id dang NOT NULL. Hay cho phep NULL truoc khi import user dac biet.",
+      );
+    }
+  }
+
+  const client = await pool.connect();
+  const inserted = [];
+
+  try {
+    await client.query("BEGIN");
+
+    for (const item of validRows) {
+      const passwordHash = await hashPassword(item.password);
+      const { rows } = await client.query(
+        `INSERT INTO users
+           (name, email, password_hash, role, military_rank, position, department_id, phone, address, is_active, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, true, NOW())
+         RETURNING id, name, email, role, military_rank, position, department_id`,
+        [
+          item.name,
+          item.email,
+          passwordHash,
+          item.role,
+          item.military_rank,
+          item.position,
+          item.department_id,
+          item.phone,
+          item.address,
+        ],
+      );
+
+      inserted.push({ row: item.row, ...rows[0] });
+    }
+
+    await client.query("COMMIT");
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+
+  return {
+    imported: inserted.length,
+    failed: errors.length,
+    inserted,
+    errors,
+  };
+};
+
 module.exports = {
   login,
   refreshAccessToken,
   logout,
   getMe,
   register,
+  importUsersFromExcel,
 };

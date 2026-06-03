@@ -8,6 +8,10 @@ const { authentication } = require("../../middlewares/auth.middleware");
 const { requireRole } = require("../../middlewares/role.middleware");
 const validate = require("../../middlewares/validate");
 const {
+    uploadExcel,
+    handleMulterError,
+} = require("../../config/multer.config");
+const {
     getList,
     getById,
     create,
@@ -33,6 +37,16 @@ router.post(
     requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
     validate(create),
     controller.create,
+);
+
+// POST /api/youth/import-excel
+// Role: DQTT, CHI_HUY, ADMIN
+router.post(
+    "/import-excel",
+    requireRole(["TO_TRUONG", "CHI_HUY", "ADMIN"]),
+    uploadExcel.single("file"),
+    handleMulterError,
+    controller.importExcel,
 );
 
 // PUT /api/youth/:id

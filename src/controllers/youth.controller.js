@@ -2,6 +2,7 @@
 
 const { SuccessResponse, CREATED } = require("../core/success.response");
 const youthService = require("../services/youth.service");
+const { cleanupFile } = require("../middlewares/cleanupFile.middleware");
 
 // ─── GET /api/youth/list ──────────────────────────────────────────────────────
 const getList = async (req, res, next) => {
@@ -55,6 +56,22 @@ const create = async (req, res, next) => {
   }
 };
 
+// POST /api/youth/import-excel
+const importExcel = async (req, res, next) => {
+  try {
+    const data = await youthService.importYouthFromExcel(req.file?.path);
+
+    return new CREATED({
+      message: "Import youth personnel from Excel successfully",
+      metaData: data,
+    }).send(res);
+  } catch (err) {
+    return next(err);
+  } finally {
+    if (req.file?.path) cleanupFile(req.file.path);
+  }
+};
+
 // ─── PUT /api/youth/:id ───────────────────────────────────────────────────────
 const update = async (req, res, next) => {
   try {
@@ -100,4 +117,12 @@ const promoteToNguon = async (req, res, next) => {
   }
 };
 
-module.exports = { getList, getById, create, update, remove, promoteToNguon };
+module.exports = {
+  getList,
+  getById,
+  create,
+  importExcel,
+  update,
+  remove,
+  promoteToNguon,
+};
