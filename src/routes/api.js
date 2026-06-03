@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 
 const activityRoute = require("./activity");
+const activityTemplateRoute = require("./activityTemplate");
 const activityTaskRoute = require("./activityTask");
 const calendarRoute = require("./calendar");
 const authRoute = require("./auth");
@@ -18,6 +19,7 @@ const websiteRoute = require("./website");
 const chatRoute = require("./chat");
 
 router.use("/activities", activityRoute);
+router.use("/activity-templates", activityTemplateRoute);
 router.use("/activities-task", activityTaskRoute);
 router.use("/calendar", calendarRoute);
 router.use("/auth", authRoute);

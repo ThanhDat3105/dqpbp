@@ -202,6 +202,7 @@ const getActivityById = async (id, user_id, role) => {
               'due_date', t.due_date,
               'report_fields', t.report_fields,
               'requires_dqcd', t.requires_dqcd,
+              'team', t.team,
               'assignees', COALESCE(
                 (
                   SELECT json_agg(
