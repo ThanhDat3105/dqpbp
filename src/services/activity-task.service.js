@@ -44,6 +44,20 @@ async function checkAndCompleteActivity(activityId, client) {
   }
 }
 
+const parseMediaFiles = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+};
+
 const createActivityTask = async (taskData) => {
   const {
     activity_id,
@@ -58,6 +72,7 @@ const createActivityTask = async (taskData) => {
     accepted_at,
     created_at,
     updated_at,
+    require_media_report = false,
   } = taskData;
 
   const result = await pool.query(
@@ -72,10 +87,11 @@ const createActivityTask = async (taskData) => {
       completed_at,
       status,
       accepted_at,
+      require_media_report,
       created_at,
       updated_at
     )
-    VALUES ($1,$2,$3::TEXT[],$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    VALUES ($1,$2,$3::TEXT[],$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
     RETURNING id`,
     [
       activity_id,
@@ -88,6 +104,7 @@ const createActivityTask = async (taskData) => {
       completed_at,
       status,
       accepted_at,
+      require_media_report,
       created_at,
       updated_at,
     ],
@@ -106,7 +123,7 @@ const createActivityTask = async (taskData) => {
   return result.rows[0];
 };
 
-const updateActivityTaskStatus = async (id, status) => {
+const updateActivityTaskStatus = async (id, { status, media_files = [] }) => {
   const validStatuses = ["pending", "in_progress", "completed"];
 
   if (!validStatuses.includes(status)) {
@@ -121,7 +138,7 @@ const updateActivityTaskStatus = async (id, status) => {
 
     // 🔒 Lock row để tránh race condition
     const taskResult = await client.query(
-      `SELECT id, activity_id, report_fields 
+      `SELECT id, activity_id, report_fields, require_media_report, media_files
        FROM activity_tasks 
        WHERE id = $1 
        FOR UPDATE`,
@@ -133,6 +150,8 @@ const updateActivityTaskStatus = async (id, status) => {
     }
 
     const task = taskResult.rows[0];
+    const nextMediaFiles =
+      media_files.length > 0 ? media_files : parseMediaFiles(task.media_files);
 
     // ✅ Validate report_fields khi complete
     if (status === "completed") {
@@ -173,6 +192,10 @@ const updateActivityTaskStatus = async (id, status) => {
           "All report fields must be filled before completing the task",
         );
       }
+
+      if (task.require_media_report && nextMediaFiles.length === 0) {
+        throw new BadRequestError("Vui lòng đính kèm ít nhất 1 ảnh hoặc file");
+      }
     }
 
     // 🔥 Update task
@@ -184,21 +207,26 @@ const updateActivityTaskStatus = async (id, status) => {
         UPDATE activity_tasks
         SET status = $1,
             completed_at = NOW(),
+            media_files = $2::jsonb,
             updated_at = NOW()
-        WHERE id = $2
+        WHERE id = $3
         RETURNING *
       `;
-      params = [status, id];
+      params = [status, JSON.stringify(nextMediaFiles), id];
     } else {
       query = `
         UPDATE activity_tasks
         SET status = $1,
             completed_at = NULL,
+            media_files = CASE
+              WHEN $2::jsonb = '[]'::jsonb THEN media_files
+              ELSE $2::jsonb
+            END,
             updated_at = NOW()
-        WHERE id = $2
+        WHERE id = $3
         RETURNING *
       `;
-      params = [status, id];
+      params = [status, JSON.stringify(nextMediaFiles), id];
     }
 
     const result = await client.query(query, params);

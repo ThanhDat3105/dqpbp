@@ -202,6 +202,8 @@ const getActivityById = async (id, user_id, role) => {
               'due_date', t.due_date,
               'report_fields', t.report_fields,
               'requires_dqcd', t.requires_dqcd,
+              'require_media_report', t.require_media_report,
+              'media_files', COALESCE(t.media_files, '[]'::jsonb),
               'team', t.team,
               'assignees', COALESCE(
                 (
@@ -344,9 +346,10 @@ const createActivity = async (activityData, user_id, role) => {
             accepted_at,
             created_at,
             updated_at,
-            requires_dqcd
+            requires_dqcd,
+            require_media_report
           )
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
           RETURNING id
           `,
         [
@@ -362,6 +365,7 @@ const createActivity = async (activityData, user_id, role) => {
           task.created_at,
           task.updated_at,
           task.requires_dqcd || false,
+          task.require_media_report || false,
         ],
       );
 

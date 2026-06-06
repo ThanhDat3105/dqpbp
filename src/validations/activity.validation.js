@@ -45,6 +45,7 @@ const createActivity = {
             }),
           ),
           requires_dqcd: Joi.boolean().default(false),
+          require_media_report: Joi.boolean().default(false),
           accepted_at: Joi.date().allow(null),
           created_at: Joi.date().default(() => new Date(), new Date()),
           updated_at: Joi.date().default(() => new Date(), new Date()),

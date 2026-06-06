@@ -17,6 +17,7 @@ const createActivityTask = {
       }),
     ),
     accepted_at: Joi.date().allow(null),
+    require_media_report: Joi.boolean().default(false),
     created_at: Joi.date().default(() => new Date(), new Date()),
     updated_at: Joi.date().default(() => new Date(), new Date()),
   }),
@@ -24,7 +25,10 @@ const createActivityTask = {
 
 const updateActivityTaskStatus = {
   body: Joi.object().keys({
-    status: Joi.string().max(50),
+    status: Joi.string()
+      .valid("pending", "in_progress", "completed")
+      .required(),
+    media_files: Joi.array().items(Joi.string().uri()).default([]),
   }),
 };
 

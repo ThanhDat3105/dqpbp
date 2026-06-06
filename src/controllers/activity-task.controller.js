@@ -117,7 +117,10 @@ const updateActivityTaskStatus = async (req, res, next) => {
   try {
     const data = await activityTaskService.updateActivityTaskStatus(
       req.params.id,
-      req.body.status,
+      {
+        status: req.body.status,
+        media_files: req.body.media_files ?? [],
+      },
     );
     return new SuccessResponse({
       message: "Task status updated successfully",
