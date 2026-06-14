@@ -19,6 +19,7 @@ const websiteRoute = require("./website");
 const chatRoute = require("./chat");
 const uploadRoute = require("./upload");
 const documentsRoute = require("./documents");
+const mapRoute = require("./map");
 
 router.use("/activities", activityRoute);
 router.use("/activity-templates", activityTemplateRoute);
@@ -38,5 +39,6 @@ router.use("/chat", chatRoute);
 router.use("/website", websiteRoute);
 router.use("/upload", uploadRoute);
 router.use("/documents", documentsRoute);
+router.use("/ban-do", mapRoute);
 
 module.exports = router;
