@@ -2,8 +2,56 @@
 
 const pool = require("../config/db");
 const { ForbiddenError, NotFoundError } = require("../core/error.response");
+const { checkAndCompleteActivity } = require("./activity-task.service");
 
 const formatDate = (value) => new Date(value).toISOString().split("T")[0];
+
+function getTaskIdsFromMetadata(metadata) {
+  if (!metadata) return [];
+
+  if (metadata.task_id) {
+    const taskId = Number(metadata.task_id);
+    return Number.isNaN(taskId) ? [] : [taskId];
+  }
+
+  if (Array.isArray(metadata.tasks)) {
+    return metadata.tasks
+      .map((task) => Number(task.task_id))
+      .filter((taskId) => !Number.isNaN(taskId));
+  }
+
+  return [];
+}
+
+async function startAssignedTasks(client, userId, taskIds) {
+  const updatedActivityIds = new Set();
+
+  for (const taskId of taskIds) {
+    const { rows } = await client.query(
+      `
+      UPDATE activity_tasks
+      SET status = 'in_progress', updated_at = NOW()
+      WHERE id = $1
+        AND status = 'pending'
+        AND EXISTS (
+          SELECT 1
+          FROM task_assignees
+          WHERE task_id = $1 AND user_id = $2
+        )
+      RETURNING activity_id
+    `,
+      [taskId, userId],
+    );
+
+    if (rows[0]?.activity_id) {
+      updatedActivityIds.add(rows[0].activity_id);
+    }
+  }
+
+  for (const activityId of updatedActivityIds) {
+    await checkAndCompleteActivity(activityId, client);
+  }
+}
 
 const getNotificationsByUser = async (
   userId,
@@ -55,35 +103,52 @@ const getNotificationsByUser = async (
 };
 
 const markAsRead = async (notificationId, userId) => {
-  const { rows } = await pool.query(
-    `
-    SELECT id, user_id
-    FROM notifications
-    WHERE id = $1
-    LIMIT 1
-  `,
-    [notificationId],
-  );
+  const client = await pool.connect();
 
-  if (rows.length === 0) {
-    throw new NotFoundError("Notification not found");
+  try {
+    await client.query("BEGIN");
+
+    const { rows } = await client.query(
+      `
+      SELECT id, user_id, metadata
+      FROM notifications
+      WHERE id = $1
+      LIMIT 1
+    `,
+      [notificationId],
+    );
+
+    if (rows.length === 0) {
+      throw new NotFoundError("Notification not found");
+    }
+
+    if (Number(rows[0].user_id) !== Number(userId)) {
+      throw new ForbiddenError("Forbidden");
+    }
+
+    const updateResult = await client.query(
+      `
+      UPDATE notifications
+      SET is_read = true, updated_at = NOW()
+      WHERE id = $1
+      RETURNING id, is_read, updated_at
+    `,
+      [notificationId],
+    );
+
+    const taskIds = getTaskIdsFromMetadata(rows[0].metadata);
+    if (taskIds.length > 0) {
+      await startAssignedTasks(client, userId, taskIds);
+    }
+
+    await client.query("COMMIT");
+    return updateResult.rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
-
-  if (Number(rows[0].user_id) !== Number(userId)) {
-    throw new ForbiddenError("Forbidden");
-  }
-
-  const updateResult = await pool.query(
-    `
-    UPDATE notifications
-    SET is_read = true, updated_at = NOW()
-    WHERE id = $1
-    RETURNING id, is_read, updated_at
-  `,
-    [notificationId],
-  );
-
-  return updateResult.rows[0];
 };
 
 const getTodayDigest = async (userId) => {

@@ -4,19 +4,6 @@ const pool = require("../config/db");
 const { BadRequestError, NotFoundError } = require("../core/error.response");
 const activityService = require("./activity.service");
 
-const addDays = (date, days) => {
-  const result = new Date(date);
-  result.setDate(result.getDate() + Number(days || 0));
-  return result;
-};
-
-const diffInDays = (date, baseDate) => {
-  const start = new Date(baseDate);
-  const end = new Date(date);
-  const dayMs = 24 * 60 * 60 * 1000;
-  return Math.max(0, Math.round((end - start) / dayMs));
-};
-
 const normalizeTask = (task, index = 0) => ({
   title: task.title,
   team: task.team || [],
@@ -25,20 +12,9 @@ const normalizeTask = (task, index = 0) => ({
   report_fields:
     task.report_fields !== undefined ? task.report_fields : task.reportFields || [],
   requires_dqcd: task.requires_dqcd || false,
-  start_offset_days: Number(task.start_offset_days || 0),
-  due_offset_days: Number(task.due_offset_days || 0),
+  require_media_report: task.require_media_report || false,
   display_order: Number(task.display_order ?? index),
 });
-
-const ensureTaskOffsetsAreValid = (tasks) => {
-  for (const task of tasks) {
-    if (task.start_offset_days > task.due_offset_days) {
-      throw new BadRequestError(
-        "task start_offset_days must be less than or equal to due_offset_days",
-      );
-    }
-  }
-};
 
 const mapTemplateRow = (row) => ({
   id: row.id,
@@ -70,9 +46,8 @@ const getTemplateById = async (id, client = pool) => {
               'notes', tt.notes,
               'report_fields', tt.report_fields,
               'requires_dqcd', tt.requires_dqcd,
-              'start_offset_days', tt.start_offset_days,
-              'due_offset_days', tt.due_offset_days,
-              'display_order', tt.display_order
+              'display_order', tt.display_order,
+              'require_media_report', tt.require_media_report
             )
             ORDER BY tt.display_order ASC, tt.id ASC
           ) FILTER (WHERE tt.id IS NOT NULL),
@@ -160,9 +135,9 @@ const insertTemplateTasks = async (client, templateId, tasks) => {
       `
         INSERT INTO activity_template_tasks (
           template_id, title, team, assignees, notes, report_fields,
-          requires_dqcd, start_offset_days, due_offset_days, display_order
+          requires_dqcd, require_media_report, display_order
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
       `,
       [
         templateId,
@@ -172,8 +147,7 @@ const insertTemplateTasks = async (client, templateId, tasks) => {
         task.notes,
         JSON.stringify(task.report_fields),
         task.requires_dqcd,
-        task.start_offset_days,
-        task.due_offset_days,
+        task.require_media_report,
         task.display_order,
       ],
     );
@@ -182,7 +156,6 @@ const insertTemplateTasks = async (client, templateId, tasks) => {
 
 const createTemplate = async (templateData, createdBy) => {
   const tasks = (templateData.tasks || []).map(normalizeTask);
-  ensureTaskOffsetsAreValid(tasks);
 
   const client = await pool.connect();
   try {
@@ -222,11 +195,6 @@ const createTemplate = async (templateData, createdBy) => {
 };
 
 const updateTemplate = async (id, templateData) => {
-  if (templateData.tasks) {
-    const tasks = templateData.tasks.map(normalizeTask);
-    ensureTaskOffsetsAreValid(tasks);
-  }
-
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -321,28 +289,18 @@ const createActivityFromTemplate = async (
     );
   }
 
-  const tasks = template.tasks.map((task) => {
-    const taskStart = addDays(activityStart, task.start_offset_days);
-    const taskEnd = addDays(activityStart, task.due_offset_days);
-
-    if (taskEnd > activityEnd) {
-      throw new BadRequestError(
-        `Task "${task.title}" due date exceeds activity end_date`,
-      );
-    }
-
-    return {
-      title: task.title,
-      team: task.team || [],
-      assignees: task.assignees || [],
-      status: "pending",
-      start_date: taskStart,
-      due_date: taskEnd,
-      notes: task.notes,
-      report_fields: task.report_fields || [],
-      requires_dqcd: task.requires_dqcd || false,
-    };
-  });
+  const tasks = template.tasks.map((task) => ({
+    title: task.title,
+    team: task.team || [],
+    assignees: task.assignees || [],
+    status: "pending",
+    start_date: activityStart,
+    due_date: activityEnd,
+    notes: task.notes,
+    report_fields: task.report_fields || [],
+    requires_dqcd: task.requires_dqcd || false,
+    require_media_report: task.require_media_report || false,
+  }));
 
   return activityService.createActivity(
     {
@@ -390,14 +348,7 @@ const createTemplateFromActivity = async (activityId, payload, createdBy) => {
               'notes', t.notes,
               'report_fields', t.report_fields,
               'requires_dqcd', t.requires_dqcd,
-              'start_offset_days', GREATEST(
-                0,
-                FLOOR(EXTRACT(EPOCH FROM (t.start_date::timestamp - a.start_date::timestamp)) / 86400)::int
-              ),
-              'due_offset_days', GREATEST(
-                0,
-                FLOOR(EXTRACT(EPOCH FROM (t.due_date::timestamp - a.start_date::timestamp)) / 86400)::int
-              ),
+              'require_media_report', t.require_media_report,
               'display_order', t.id
             )
             ORDER BY t.start_date ASC, t.due_date ASC, t.id ASC
@@ -419,10 +370,6 @@ const createTemplateFromActivity = async (activityId, payload, createdBy) => {
   const activity = result.rows[0];
   const tasks = (activity.tasks || []).map((task, index) => ({
     ...task,
-    start_offset_days:
-      task.start_offset_days ?? diffInDays(task.start_date, activity.start_date),
-    due_offset_days:
-      task.due_offset_days ?? diffInDays(task.due_date, activity.start_date),
     display_order: index,
   }));
 

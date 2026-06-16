@@ -96,22 +96,27 @@ const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
     days_with_dow AS (
       SELECT slot_date, EXTRACT(ISODOW FROM slot_date)::int AS day_of_week
       FROM week_days
+    ),
+    shifts AS (
+      SELECT unnest(ARRAY['SANG', 'CHIEU', 'DEM']::text[]) AS shift
     )
     SELECT
       m.user_id,
       m.name,
       d.day_of_week,
-      t.shift,
+      s.shift,
       to_char(t.start_time, 'HH24:MI') AS start_time,
       to_char(t.end_time, 'HH24:MI') AS end_time,
       COALESCE(aw.mobilize_count, 0) AS mobilize_count
     FROM members m
     CROSS JOIN days_with_dow d
+    CROSS JOIN shifts s
     LEFT JOIN LATERAL (
-      SELECT shift, start_time, end_time
+      SELECT start_time, end_time
       FROM user_schedule_templates
       WHERE user_id = m.user_id
         AND day_of_week = d.day_of_week
+        AND shift = s.shift::shift_type
         AND (week_start = $1::date OR week_start IS NULL)
       ORDER BY week_start NULLS LAST  -- tuần cụ thể ưu tiên hơn NULL (default template)
       LIMIT 1
@@ -119,7 +124,7 @@ const getWeeklySchedule = async (weekStart, user_id, unitFilter = null) => {
     LEFT JOIN dqcd_mobilize_summary aw
       ON aw.user_id = m.user_id
       AND aw.week_start::date = $1::date
-    ORDER BY m.name, d.day_of_week, t.shift;
+    ORDER BY m.name, d.day_of_week, s.shift;
   `;
 
   const { rows } = await pool.query(query, params);
@@ -202,6 +207,25 @@ const deleteTemplate = async (data) => {
   await pool.query(query, [data.user_id, data.day_of_week, data.shift]);
 };
 
+const deleteRegisteredSchedule = async (data) => {
+  const params = [data.user_id, data.week_start];
+  const filters = ["user_id = $1", "week_start = $2"];
+
+  if (data.day_of_week && data.shift) {
+    params.push(data.day_of_week, data.shift);
+    filters.push("day_of_week = $3", "shift = $4");
+  }
+
+  const query = `
+    DELETE FROM user_schedule_templates
+    WHERE ${filters.join(" AND ")}
+    RETURNING *;
+  `;
+
+  const { rows } = await pool.query(query, params);
+  return rows;
+};
+
 const checkUserExists = async (userId) => {
   const { rows } = await pool.query("SELECT 1 FROM users WHERE id = $1", [
     userId,
@@ -253,6 +277,7 @@ module.exports = {
   getWeeklySchedule,
   upsertTemplate,
   deleteTemplate,
+  deleteRegisteredSchedule,
   checkUserExists,
   registerSchedule,
 };

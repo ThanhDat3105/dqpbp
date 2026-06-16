@@ -1,5 +1,63 @@
 const pool = require("../config/db");
 const { BadRequestError, NotFoundError } = require("../core/error.response");
+const { assertCanExecuteTask } = require("../utils/task-team.util");
+
+const parseReportFields = (raw) => {
+  if (!raw) return [];
+
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return Array.isArray(raw) ? raw : [];
+};
+
+const mergeReportFields = (templateFields, incomingFields = []) => {
+  const merged = templateFields.map((field) => {
+    const updated = incomingFields.find((f) => f.name === field.name);
+    return updated ? { ...field, ...updated } : field;
+  });
+
+  incomingFields.forEach((field) => {
+    const exists = templateFields.some((f) => f.name === field.name);
+    if (!exists) {
+      merged.push(field);
+    }
+  });
+
+  return merged;
+};
+
+const validateCompleteTaskPayload = (task, { dqcd_unit, report_fields }) => {
+  if (task.requires_dqcd && !String(dqcd_unit ?? "").trim()) {
+    throw new BadRequestError("Vui lòng chọn đơn vị điều động DQCĐ");
+  }
+
+  const templateFields = parseReportFields(task.report_fields);
+  if (templateFields.length === 0) {
+    return null;
+  }
+
+  const mergedFields = mergeReportFields(templateFields, report_fields);
+  const allFilled = mergedFields.every(
+    (field) =>
+      field &&
+      typeof field.name === "string" &&
+      typeof field.value === "string" &&
+      field.value.trim().length > 0,
+  );
+
+  if (!allFilled) {
+    throw new BadRequestError("Vui lòng điền đầy đủ hạng mục báo cáo");
+  }
+
+  return mergedFields;
+};
 
 async function checkAndCompleteActivity(activityId, client) {
   const { rows } = await client.query(
@@ -123,7 +181,8 @@ const createActivityTask = async (taskData) => {
   return result.rows[0];
 };
 
-const updateActivityTaskStatus = async (id, { status, media_files = [] }) => {
+const updateActivityTaskStatus = async (id, updateData, user = null) => {
+  const { status, dqcd_unit, report_fields, media_files = [] } = updateData;
   const validStatuses = ["pending", "in_progress", "completed"];
 
   if (!validStatuses.includes(status)) {
@@ -136,9 +195,8 @@ const updateActivityTaskStatus = async (id, { status, media_files = [] }) => {
   try {
     await client.query("BEGIN");
 
-    // 🔒 Lock row để tránh race condition
     const taskResult = await client.query(
-      `SELECT id, activity_id, report_fields, require_media_report, media_files
+      `SELECT id, activity_id, report_fields, require_media_report, media_files, team, requires_dqcd
        FROM activity_tasks 
        WHERE id = $1 
        FOR UPDATE`,
@@ -150,69 +208,56 @@ const updateActivityTaskStatus = async (id, { status, media_files = [] }) => {
     }
 
     const task = taskResult.rows[0];
+    assertCanExecuteTask(user, task);
+
+    let mergedReportFields = null;
     const nextMediaFiles =
       media_files.length > 0 ? media_files : parseMediaFiles(task.media_files);
 
-    // ✅ Validate report_fields khi complete
     if (status === "completed") {
-      let reportFields = task.report_fields;
-
-      if (!reportFields) {
-        throw new BadRequestError(
-          "All report fields must be filled before completing the task",
-        );
-      }
-
-      if (typeof reportFields === "string") {
-        try {
-          reportFields = JSON.parse(reportFields);
-        } catch {
-          throw new BadRequestError(
-            "All report fields must be filled before completing the task",
-          );
-        }
-      }
-
-      if (!Array.isArray(reportFields)) {
-        throw new BadRequestError(
-          "All report fields must be filled before completing the task",
-        );
-      }
-
-      const isValid = reportFields.every(
-        (field) =>
-          field &&
-          typeof field.name === "string" &&
-          typeof field.value === "string" &&
-          field.value.trim().length > 0,
-      );
-
-      if (!isValid) {
-        throw new BadRequestError(
-          "All report fields must be filled before completing the task",
-        );
-      }
+      mergedReportFields = validateCompleteTaskPayload(task, {
+        dqcd_unit,
+        report_fields,
+      });
 
       if (task.require_media_report && nextMediaFiles.length === 0) {
         throw new BadRequestError("Vui lòng đính kèm ít nhất 1 ảnh hoặc file");
       }
     }
 
-    // 🔥 Update task
     let query;
     let params;
 
     if (status === "completed") {
+      const updates = [
+        "status = $1",
+        "media_files = $2::jsonb",
+        "completed_at = NOW()",
+        "updated_at = NOW()",
+      ];
+      params = [status, JSON.stringify(nextMediaFiles)];
+      let paramIndex = 3;
+
+      if (task.requires_dqcd) {
+        updates.push(`dqcd_unit = $${paramIndex}`);
+        params.push(String(dqcd_unit).trim());
+        paramIndex++;
+      }
+
+      if (mergedReportFields) {
+        updates.push(`report_fields = $${paramIndex}::jsonb`);
+        params.push(JSON.stringify(mergedReportFields));
+        paramIndex++;
+      }
+
+      params.push(id);
+
       query = `
         UPDATE activity_tasks
-        SET status = $1,
-            completed_at = NOW(),
-            media_files = $2::jsonb,
-            updated_at = NOW()
-        WHERE id = $3
+        SET ${updates.join(", ")}
+        WHERE id = $${paramIndex}
         RETURNING *
       `;
-      params = [status, JSON.stringify(nextMediaFiles), id];
     } else {
       query = `
         UPDATE activity_tasks
@@ -232,8 +277,7 @@ const updateActivityTaskStatus = async (id, { status, media_files = [] }) => {
     const result = await client.query(query, params);
     const updatedTask = result.rows[0];
 
-    // 🔥 Auto update activity (giữ nguyên hàm của bạn)
-    await checkAndCompleteActivity(updatedTask.activity_id, client);
+    await checkAndCompleteActivity(task.activity_id, client);
 
     await client.query("COMMIT");
     return updatedTask;
@@ -667,4 +711,5 @@ module.exports = {
   getTaskList,
   assignDQCD,
   updateDQCDAssignees,
+  checkAndCompleteActivity,
 };

@@ -43,6 +43,13 @@ const deleteTemplate = Joi.object({
   shift: Joi.string().valid("SANG", "CHIEU", "DEM").required(),
 });
 
+const deleteRegisteredSchedule = Joi.object({
+  user_id: Joi.number().integer().required(),
+  week_start: Joi.string().pattern(/^\d{4}-\d{2}-\d{2}$/).required(),
+  day_of_week: Joi.number().integer().min(1).max(7),
+  shift: Joi.string().valid("SANG", "CHIEU", "DEM"),
+}).and("day_of_week", "shift");
+
 const updateMobilize = Joi.object({
   user_id: Joi.number().integer().required(),
   week_start: Joi.string()
@@ -78,6 +85,7 @@ module.exports = {
   getWeekly,
   upsertTemplate,
   deleteTemplate,
+  deleteRegisteredSchedule,
   updateMobilize,
   registerSchedule
 };

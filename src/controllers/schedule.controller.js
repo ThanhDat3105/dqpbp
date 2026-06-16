@@ -106,6 +106,49 @@ const deleteTemplate = async (req, res) => {
   }
 };
 
+const deleteRegisteredSchedule = async (req, res) => {
+  try {
+    const { error, value } = scheduleValidation.deleteRegisteredSchedule.validate(req.body);
+    if (error) {
+      return res.status(400).json({
+        success: false,
+        error: error.message.replace(/\"/g, ''),
+        code: "VALIDATION_FAILED"
+      });
+    }
+
+    const { user_id, week_start } = value;
+
+    const reqDate = new Date(week_start);
+    if (reqDate.getUTCDay() !== 1) {
+      return res.status(400).json({
+        success: false,
+        error: "week_start must be a Monday",
+        code: "INVALID_WEEK_START"
+      });
+    }
+
+    const exists = await scheduleService.checkUserExists(user_id);
+    if (!exists) {
+      return res.status(404).json({
+        success: false,
+        error: "user_id does not exist",
+        code: "USER_NOT_FOUND"
+      });
+    }
+
+    const deleted = await scheduleService.deleteRegisteredSchedule(value);
+    res.json({ success: true, deleted_count: deleted.length });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      success: false,
+      error: "Database error",
+      code: "DATABASE_ERROR"
+    });
+  }
+};
+
 const updateMobilize = async (req, res) => {
   try {
     const { error, value } = scheduleValidation.updateMobilize.validate(req.body);
@@ -176,6 +219,7 @@ module.exports = {
   getWeekly,
   upsertTemplate,
   deleteTemplate,
+  deleteRegisteredSchedule,
   updateMobilize,
   registerSchedule
 };

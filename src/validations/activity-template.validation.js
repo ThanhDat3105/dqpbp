@@ -31,8 +31,7 @@ const taskSchema = Joi.object({
       }).unknown(true),
     ),
   requires_dqcd: Joi.boolean().default(false),
-  start_offset_days: Joi.number().integer().min(0).default(0),
-  due_offset_days: Joi.number().integer().min(0).default(0),
+  require_media_report: Joi.boolean().default(false),
   display_order: Joi.number().integer().min(0).default(0),
 });
 

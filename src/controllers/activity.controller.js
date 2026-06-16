@@ -42,12 +42,13 @@ const getActivities = async (req, res, next) => {
  */
 const getActivityById = async (req, res, next) => {
   try {
-    const { user_id, role } = req.user;
+    const { user_id, role, department } = req.user;
 
     const data = await activityService.getActivityById(
       req.params.id,
       user_id,
       role,
+      department,
     );
     return new SuccessResponse({
       message: "Activity retrieved successfully",

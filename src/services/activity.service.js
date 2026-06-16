@@ -5,6 +5,10 @@ const {
   ForbiddenError,
 } = require("../core/error.response");
 const paginate = require("../plugins/paginate.plugin");
+const {
+  getTeamFilterDepartment,
+  buildTaskTeamSqlFilter,
+} = require("../utils/task-team.util");
 
 const getActivities = async (filter, option) => {
   // ROLE-BASED ACCESS
@@ -186,7 +190,15 @@ const getActivities = async (filter, option) => {
   }
 };
 
-const getActivityById = async (id, user_id, role) => {
+const getActivityById = async (id, user_id, role, department = null) => {
+  const params = [id];
+  const teamDepartment = getTeamFilterDepartment(role, department);
+  const teamFilter = buildTaskTeamSqlFilter(teamDepartment, params.length + 1);
+
+  if (teamFilter.params.length > 0) {
+    params.push(...teamFilter.params);
+  }
+
   const result = await pool.query(
     `
     SELECT 
@@ -202,6 +214,7 @@ const getActivityById = async (id, user_id, role) => {
               'due_date', t.due_date,
               'report_fields', t.report_fields,
               'requires_dqcd', t.requires_dqcd,
+              'dqcd_unit', t.dqcd_unit,
               'require_media_report', t.require_media_report,
               'media_files', COALESCE(t.media_files, '[]'::jsonb),
               'team', t.team,
@@ -230,6 +243,7 @@ const getActivityById = async (id, user_id, role) => {
           )
           FROM activity_tasks t
           WHERE t.activity_id = a.id
+          ${teamFilter.clause}
         ),
         '[]'::json
       ) AS tasks,
@@ -246,13 +260,14 @@ const getActivityById = async (id, user_id, role) => {
           JOIN task_assignees ta ON ta.task_id = t.id
           JOIN users u ON u.id = ta.user_id
           WHERE t.activity_id = a.id
+          ${teamFilter.clause}
         ),
         '[]'::json
       ) AS assignees
     FROM activities a
     WHERE a.id = $1
     `,
-    [id],
+    params,
   );
 
   if (result.rows.length === 0) {
@@ -322,7 +337,7 @@ const createActivity = async (activityData, user_id, role) => {
       document_number,
       attached_files ? JSON.stringify(attached_files) : null,
       status,
-      created_by ? String(created_by) : 'admin',
+      created_by ? String(created_by) : "admin",
       created_at,
       updated_at,
     ],

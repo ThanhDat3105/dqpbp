@@ -38,8 +38,6 @@ const getList = async (req, res, next) => {
 
 const upload = async (req, res, next) => {
   try {
-    console.log("runnnnnnn");
-
     const data = await documentService.uploadDocument({
       file: req.file,
       payload: req.body,

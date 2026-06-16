@@ -14,6 +14,14 @@ const normalizeBooleanFilter = (value) => {
   return null;
 };
 
+const normalizeOriginalFileName = (value) => {
+  const fileName = String(value || "");
+
+  if (!/[ÃÂÄáºá»]/.test(fileName)) return fileName;
+
+  return Buffer.from(fileName, "latin1").toString("utf8");
+};
+
 const fetchList = async ({
   page,
   limit,
@@ -96,7 +104,8 @@ const uploadDocument = async ({ file, payload, user }) => {
     throw new BadRequestError("No file provided");
   }
 
-  const title = String(payload.title || file.originalname || "").trim();
+  const originalName = normalizeOriginalFileName(file.originalname);
+  const title = String(payload.title || originalName || "").trim();
   const description = payload.description ? String(payload.description).trim() : null;
   const departmentId = Number(
     payload.department_id || payload.departmentId || user.department_id,
@@ -114,7 +123,7 @@ const uploadDocument = async ({ file, payload, user }) => {
 
   const fileUrl = await uploadToR2(
     file.buffer,
-    file.originalname,
+    originalName,
     file.mimetype,
     "documents",
   );
@@ -128,7 +137,7 @@ const uploadDocument = async ({ file, payload, user }) => {
       title,
       description,
       fileUrl,
-      file.originalname,
+      originalName,
       isPublic,
       user.user_id,
       departmentId,

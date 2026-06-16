@@ -17,9 +17,9 @@ const department = require("./department");
 const kpiRoute = require("./kpi");
 const websiteRoute = require("./website");
 const chatRoute = require("./chat");
+const mapRoute = require("./map");
 const uploadRoute = require("./upload");
 const documentsRoute = require("./documents");
-const mapRoute = require("./map");
 
 router.use("/activities", activityRoute);
 router.use("/activity-templates", activityTemplateRoute);
@@ -37,8 +37,8 @@ router.use("/department", department);
 router.use("/kpi", kpiRoute);
 router.use("/chat", chatRoute);
 router.use("/website", websiteRoute);
+router.use("/ban-do", mapRoute);
 router.use("/upload", uploadRoute);
 router.use("/documents", documentsRoute);
-router.use("/ban-do", mapRoute);
 
 module.exports = router;
