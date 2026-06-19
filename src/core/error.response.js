@@ -90,6 +90,15 @@ class ValidationError extends ErrorResponse {
   }
 }
 
+class TooManyRequestsError extends ErrorResponse {
+  constructor(
+    message = "Too many requests",
+    statusCode = 429
+  ) {
+    super(message, statusCode);
+  }
+}
+
 module.exports = {
   ConflictRequestError,
   BadRequestError,
@@ -100,4 +109,5 @@ module.exports = {
   InsufficientBalanceError,
   PaymentRequiredError,
   ValidationError,
+  TooManyRequestsError,
 };

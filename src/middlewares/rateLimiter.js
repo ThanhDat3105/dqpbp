@@ -31,8 +31,21 @@ const adminLimiter = rateLimit({
   },
 });
 
+const registrationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    status: "error",
+    code: 429,
+    message: "Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.",
+  },
+});
+
 module.exports = {
   authLimiter,
   globalLimiter,
   adminLimiter,
+  registrationLimiter,
 };

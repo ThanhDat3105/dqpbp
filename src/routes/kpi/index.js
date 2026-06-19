@@ -7,6 +7,7 @@ const kpiController = require("../../controllers/kpi.controller");
 const { authentication } = require("../../middlewares/auth.middleware");
 
 router.get("/summary", authentication, kpiController.getKpiSummary);
+router.get("/departments", authentication, kpiController.getKpiDepartments);
 router.get("/", authentication, kpiController.getKpi);
 
 module.exports = router;

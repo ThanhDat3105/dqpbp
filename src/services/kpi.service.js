@@ -60,6 +60,23 @@ const parseYear = (year) => {
   return yearValue;
 };
 
+const parseWeek = (week) => {
+  const weekValue = Number(week);
+
+  if (!Number.isInteger(weekValue) || weekValue < 1 || weekValue > 53) {
+    throw new BadRequestError("week must be an integer between 1 and 53");
+  }
+
+  return weekValue;
+};
+
+const getISOWeekStartDate = (year, week) => {
+  const simple = new Date(Date.UTC(year, 0, 4));
+  const day = simple.getUTCDay() || 7;
+  simple.setUTCDate(simple.getUTCDate() - day + 1 + (week - 1) * 7);
+  return new Date(simple.getUTCFullYear(), simple.getUTCMonth(), simple.getUTCDate());
+};
+
 const getRangeByPeriod = (period) => {
   const now = new Date();
 
@@ -88,7 +105,7 @@ const getRangeByPeriod = (period) => {
   }
 };
 
-const resolveSummaryRange = ({ period, from, to, month, quarter, year }) => {
+const resolveSummaryRange = ({ period, from, to, week, month, quarter, year }) => {
   if (hasValue(from) || hasValue(to)) {
     if (!hasValue(from) || !hasValue(to)) {
       throw new BadRequestError("Both from and to are required together");
@@ -111,8 +128,19 @@ const resolveSummaryRange = ({ period, from, to, month, quarter, year }) => {
     };
   }
 
-  if (hasValue(month) && hasValue(quarter)) {
-    throw new BadRequestError("month and quarter cannot be used together");
+  const granularFilters = [week, month, quarter].filter(hasValue);
+
+  if (granularFilters.length > 1) {
+    throw new BadRequestError("week, month and quarter cannot be used together");
+  }
+
+  if (hasValue(week)) {
+    const weekDate = getISOWeekStartDate(parseYear(year), parseWeek(week));
+
+    return {
+      from: format(startOfISOWeek(weekDate), "yyyy-MM-dd"),
+      to: format(endOfISOWeek(weekDate), "yyyy-MM-dd"),
+    };
   }
 
   if (hasValue(month)) {
@@ -241,6 +269,7 @@ const getKpiSummary = async ({
   period,
   from,
   to,
+  week,
   month,
   quarter,
   year,
@@ -254,6 +283,7 @@ const getKpiSummary = async ({
     period,
     from,
     to,
+    week,
     month,
     quarter,
     year,
@@ -314,6 +344,241 @@ const getKpiSummary = async ({
   };
 };
 
+const KPI_STATUS_CASE = `
+  CASE
+    WHEN status = 'completed'
+      AND completed_at IS NOT NULL
+      AND completed_at::date < due_date::date
+      THEN 'exceeded'
+    WHEN status = 'completed'
+      AND completed_at IS NOT NULL
+      AND completed_at::date <= due_date::date
+      THEN 'achieved'
+    WHEN status = 'completed'
+      AND completed_at IS NOT NULL
+      AND completed_at::date > due_date::date
+      THEN 'failed'
+    WHEN status IN ('pending', 'in_progress')
+      AND due_date::date < CURRENT_DATE
+      THEN 'failed'
+    WHEN status IN ('pending', 'in_progress')
+      AND due_date::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '3 days'
+      THEN 'warning'
+    WHEN status IN ('pending', 'in_progress')
+      THEN 'in_progress'
+    ELSE 'in_progress'
+  END
+`;
+
+const summarizeStatusRows = (rows) => {
+  const summary = {
+    total: 0,
+    exceeded: 0,
+    achieved: 0,
+    warning: 0,
+    failed: 0,
+    in_progress: 0,
+  };
+
+  rows.forEach((row) => {
+    const count = Number(row.count) || 0;
+    summary.total += count;
+
+    if (summary[row.kpi_status] !== undefined) {
+      summary[row.kpi_status] += count;
+    }
+  });
+
+  return summary;
+};
+
+const getKpiDepartments = async ({
+  period,
+  from,
+  to,
+  week,
+  month,
+  quarter,
+  year,
+  department_id,
+  role,
+  requesterId,
+  requesterRole,
+  requesterDepartmentId,
+}) => {
+  const targetRoles = normalizeRoles(role);
+  const dateRange = resolveSummaryRange({
+    period,
+    from,
+    to,
+    week,
+    month,
+    quarter,
+    year,
+  });
+
+  const values = [targetRoles, dateRange.from, dateRange.to];
+  const userClauses = [
+    "u.is_active = true",
+    "u.role = ANY($1)",
+    "t.due_date::date BETWEEN $2::date AND $3::date",
+    "t.status != 'cancelled'",
+  ];
+
+  if (requesterRole === "DQCD") {
+    values.push(requesterId);
+    userClauses.push(`u.id = $${values.length}`);
+  }
+
+  if (department_id) {
+    values.push(department_id);
+    userClauses.push(`u.department_id = $${values.length}`);
+  }
+
+  if (requesterRole === "TO_TRUONG" && requesterDepartmentId) {
+    values.push(requesterDepartmentId);
+    userClauses.push(`u.department_id = $${values.length}`);
+  }
+
+  const departmentValues = [];
+  const departmentClauses = ["1=1"];
+
+  if (department_id) {
+    departmentValues.push(department_id);
+    departmentClauses.push(`d.id = $${departmentValues.length}`);
+  }
+
+  if (
+    (requesterRole === "TO_TRUONG" || requesterRole === "DQCD") &&
+    requesterDepartmentId
+  ) {
+    departmentValues.push(requesterDepartmentId);
+    departmentClauses.push(`d.id = $${departmentValues.length}`);
+  }
+
+  const scopedTasksCte = `
+    WITH scoped_tasks AS (
+      SELECT DISTINCT
+        t.id,
+        t.status,
+        t.completed_at,
+        t.due_date,
+        COALESCE(a.work_type, 'other') AS work_type,
+        u.department_id,
+        d.code AS department_code,
+        d.name AS department_name
+      FROM activity_tasks t
+      JOIN activities a ON a.id = t.activity_id
+      JOIN task_assignees ta ON ta.task_id = t.id
+      JOIN users u ON u.id = ta.user_id
+      LEFT JOIN departments d ON d.id = u.department_id
+      WHERE ${userClauses.join(" AND ")}
+    )
+  `;
+
+  const [
+    overviewResult,
+    groupsResult,
+    departmentsResult,
+    baseDepartmentsResult,
+  ] = await Promise.all([
+    db.query(
+      `${scopedTasksCte}
+       SELECT kpi_status, COUNT(*) AS count
+       FROM (
+         SELECT DISTINCT id, ${KPI_STATUS_CASE} AS kpi_status
+         FROM scoped_tasks
+       ) scoped
+       GROUP BY kpi_status`,
+      values,
+    ),
+    db.query(
+      `${scopedTasksCte}
+       SELECT work_type, kpi_status, COUNT(*) AS count
+       FROM (
+         SELECT DISTINCT id, work_type, ${KPI_STATUS_CASE} AS kpi_status
+         FROM scoped_tasks
+       ) scoped
+       GROUP BY work_type, kpi_status
+       ORDER BY work_type ASC`,
+      values,
+    ),
+    db.query(
+      `${scopedTasksCte}
+       SELECT department_id, department_code, department_name, kpi_status, COUNT(*) AS count
+       FROM (
+         SELECT DISTINCT id, department_id, department_code, department_name, ${KPI_STATUS_CASE} AS kpi_status
+         FROM scoped_tasks
+       ) scoped
+       GROUP BY department_id, department_code, department_name, kpi_status
+       ORDER BY department_name ASC NULLS LAST`,
+      values,
+    ),
+    db.query(
+      `SELECT
+         d.id AS department_id,
+         d.code AS department_code,
+         d.name AS department_name
+       FROM departments d
+       WHERE ${departmentClauses.join(" AND ")}
+       ORDER BY d.name ASC`,
+      departmentValues,
+    ),
+  ]);
+
+  const overview = summarizeStatusRows(overviewResult.rows);
+
+  const groupsMap = new Map();
+  groupsResult.rows.forEach((row) => {
+    if (!groupsMap.has(row.work_type)) {
+      groupsMap.set(row.work_type, {
+        work_type: row.work_type,
+        ...summarizeStatusRows([]),
+      });
+    }
+
+    const item = groupsMap.get(row.work_type);
+    const count = Number(row.count) || 0;
+    item.total += count;
+    item[row.kpi_status] = (item[row.kpi_status] || 0) + count;
+  });
+
+  const departmentsMap = new Map();
+  baseDepartmentsResult.rows.forEach((row) => {
+    departmentsMap.set(row.department_id, {
+      department_id: row.department_id,
+      department_code: row.department_code,
+      department_name: row.department_name || "Chua xac dinh",
+      ...summarizeStatusRows([]),
+    });
+  });
+
+  departmentsResult.rows.forEach((row) => {
+    const key = row.department_id ?? "unknown";
+
+    if (!departmentsMap.has(key)) {
+      departmentsMap.set(key, {
+        department_id: row.department_id,
+        department_code: row.department_code,
+        department_name: row.department_name || "Chua xac dinh",
+        ...summarizeStatusRows([]),
+      });
+    }
+
+    const item = departmentsMap.get(key);
+    const count = Number(row.count) || 0;
+    item.total += count;
+    item[row.kpi_status] = (item[row.kpi_status] || 0) + count;
+  });
+
+  return {
+    period: dateRange,
+    overview,
+    groups: Array.from(groupsMap.values()),
+    departments: Array.from(departmentsMap.values()),
+  };
+};
+
 const getKpiList = async (filters = {}) => {
   const users = await userService.getAll({
     ...filters,
@@ -325,6 +590,7 @@ const getKpiList = async (filters = {}) => {
 
 module.exports = {
   getKpiData,
+  getKpiDepartments,
   getKpiList,
   getKpiSummary,
 };

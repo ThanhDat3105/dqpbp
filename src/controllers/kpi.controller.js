@@ -93,16 +93,46 @@ const parseYear = (year) => {
   return yearValue;
 };
 
+const parseWeek = (week) => {
+  const weekValue = Number(week);
+
+  if (!Number.isInteger(weekValue) || weekValue < 1 || weekValue > 53) {
+    throw new BadRequestError("week must be an integer between 1 and 53");
+  }
+
+  return weekValue;
+};
+
+const getISOWeekStartDate = (year, week) => {
+  const simple = new Date(Date.UTC(year, 0, 4));
+  const day = simple.getUTCDay() || 7;
+  simple.setUTCDate(simple.getUTCDate() - day + 1 + (week - 1) * 7);
+  return new Date(simple.getUTCFullYear(), simple.getUTCMonth(), simple.getUTCDate());
+};
+
 const hasValue = (value) =>
   value !== undefined && value !== null && value !== "";
 
-const parseSummaryRange = ({ period, from, to, month, quarter, year }) => {
+const parseSummaryRange = ({ period, from, to, week, month, quarter, year }) => {
   if (hasValue(from) || hasValue(to)) {
     return parseDateRange({ period, from, to });
   }
 
-  if (hasValue(month) && hasValue(quarter)) {
-    throw new BadRequestError("month and quarter cannot be used together");
+  const granularFilters = [week, month, quarter].filter(hasValue);
+
+  if (granularFilters.length > 1) {
+    throw new BadRequestError("week, month and quarter cannot be used together");
+  }
+
+  if (hasValue(week)) {
+    const weekValue = parseWeek(week);
+    const yearValue = parseYear(year);
+    const weekDate = getISOWeekStartDate(yearValue, weekValue);
+
+    return {
+      from: format(startOfISOWeek(weekDate), "yyyy-MM-dd"),
+      to: format(endOfISOWeek(weekDate), "yyyy-MM-dd"),
+    };
   }
 
   if (hasValue(month)) {
@@ -206,7 +236,7 @@ const getKpi = async (req, res, next) => {
 
 const getKpiSummary = async (req, res, next) => {
   try {
-    const { period, from, to, role, user_id, month, quarter, year } = req.query;
+    const { period, from, to, role, user_id, week, month, quarter, year } = req.query;
 
     const requesterId = req.user?.id ?? req.user?.user_id;
     const requesterRole = req.user?.role;
@@ -232,6 +262,7 @@ const getKpiSummary = async (req, res, next) => {
       period,
       from,
       to,
+      week,
       month,
       quarter,
       year,
@@ -241,6 +272,7 @@ const getKpiSummary = async (req, res, next) => {
       period,
       from: dateRange.from,
       to: dateRange.to,
+      week,
       month,
       quarter,
       year,
@@ -262,7 +294,54 @@ const getKpiSummary = async (req, res, next) => {
   }
 };
 
+const getKpiDepartments = async (req, res, next) => {
+  try {
+    const {
+      period,
+      from,
+      to,
+      week,
+      month,
+      quarter,
+      year,
+      role,
+      department_id,
+      departmentId,
+    } = req.query;
+
+    const requesterId = req.user?.id ?? req.user?.user_id;
+    const requesterRole = req.user?.role;
+
+    if (!requesterId) {
+      throw new ForbiddenError("Authentication required");
+    }
+
+    const data = await kpiService.getKpiDepartments({
+      period,
+      from,
+      to,
+      week,
+      month,
+      quarter,
+      year,
+      role,
+      department_id: department_id ?? departmentId,
+      requesterId,
+      requesterRole,
+      requesterDepartmentId: req.user?.department_id,
+    });
+
+    return new SuccessResponse({
+      message: "KPI by departments retrieved successfully",
+      metaData: data,
+    }).send(res);
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   getKpi,
+  getKpiDepartments,
   getKpiSummary,
 };
