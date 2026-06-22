@@ -87,6 +87,80 @@ const parseDateOfBirth = (value) => {
   return parsedDate.toISOString().slice(0, 10);
 };
 
+const AUTO_PROMOTE_NOTE = "Tự động chuyển từ tuổi 17 khi đủ 18 tuổi";
+
+const promoteYouthToNguon = async (client, youth, { note = null } = {}) => {
+  const { rows } = await client.query(
+    `INSERT INTO nguon
+       (full_name, date_of_birth, permanent_address, temporary_address,
+        phone, education_level, youth_personnel_id, note)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     RETURNING *`,
+    [
+      youth.full_name,
+      youth.date_of_birth,
+      youth.permanent_address,
+      youth.temporary_address,
+      youth.phone,
+      youth.education_level,
+      youth.id,
+      note,
+    ],
+  );
+
+  await client.query(`DELETE FROM youth_personnel WHERE id = $1`, [youth.id]);
+
+  return rows[0];
+};
+
+const findEligibleForAutoPromote = async (client) => {
+  const { rows } = await client.query(
+    `SELECT y.*
+     FROM youth_personnel y
+     WHERE y.date_of_birth <= (CURRENT_DATE - INTERVAL '18 years')
+       AND NOT EXISTS (
+         SELECT 1 FROM nguon n WHERE n.youth_personnel_id = y.id
+       )
+     ORDER BY y.id ASC`,
+  );
+
+  return rows;
+};
+
+const autoPromoteEligibleYouth = async () => {
+  const client = await db.connect();
+
+  try {
+    const eligible = await findEligibleForAutoPromote(client);
+
+    if (eligible.length === 0) {
+      return { promoted: 0, records: [] };
+    }
+
+    await client.query("BEGIN");
+
+    const records = [];
+    for (const youth of eligible) {
+      const record = await promoteYouthToNguon(client, youth, {
+        note: AUTO_PROMOTE_NOTE,
+      });
+      records.push(record);
+    }
+
+    await client.query("COMMIT");
+
+    return {
+      promoted: records.length,
+      records,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+};
+
 // ─── 1. List với filter + pagination ─────────────────────────────────────────
 const fetchList = async (filters) => {
   const { search, is_registered, page, limit } = filters;
@@ -351,29 +425,35 @@ const updateYouth = async (id, payload) => {
 
 // ─── 5. Chuyển hồ sơ tuổi 17 thành Nguồn ────────────────────────────────────
 const promoteToNguon = async (id) => {
-  const youth = await fetchById(id);
+  const client = await db.connect();
 
-  const { rows } = await db.query(
-    `INSERT INTO nguon
-       (full_name, date_of_birth, permanent_address, temporary_address,
-        phone, education_level, youth_personnel_id)
-     VALUES ($1, $2, $3, $4, $5, $6, $7)
-     RETURNING *`,
-    [
-      youth.full_name,
-      youth.date_of_birth,
-      youth.permanent_address,
-      youth.temporary_address,
-      youth.phone,
-      youth.education_level,
-      youth.id,
-    ],
-  );
+  try {
+    const youth = await fetchById(id);
 
-  // Xóa khỏi danh sách tuổi 17 sau khi chuyển sang Nguồn
-  await db.query(`DELETE FROM youth_personnel WHERE id = $1`, [id]);
+    const { rows: existing } = await client.query(
+      `SELECT id FROM nguon WHERE youth_personnel_id = $1 LIMIT 1`,
+      [id],
+    );
 
-  return rows[0];
+    if (existing.length > 0) {
+      await client.query(`DELETE FROM youth_personnel WHERE id = $1`, [id]);
+      const { rows: nguonRows } = await client.query(
+        `SELECT * FROM nguon WHERE id = $1`,
+        [existing[0].id],
+      );
+      return nguonRows[0];
+    }
+
+    await client.query("BEGIN");
+    const record = await promoteYouthToNguon(client, youth);
+    await client.query("COMMIT");
+    return record;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
 };
 
 // ─── 6. Delete ───────────────────────────────────────────────────────────────
@@ -396,4 +476,5 @@ module.exports = {
   updateYouth,
   deleteYouth,
   promoteToNguon,
+  autoPromoteEligibleYouth,
 };
