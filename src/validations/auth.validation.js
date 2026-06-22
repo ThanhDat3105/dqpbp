@@ -1,6 +1,7 @@
 "use strict";
 
 const Joi = require("joi");
+const { optionalText } = require("./helpers");
 
 const ROLES = ["DQTT", "CHI_HUY", "TO_TRUONG", "DQCD", "ADMIN"];
 
@@ -29,6 +30,7 @@ const register = {
     // Optional profile fields
     phone: Joi.string().trim().max(20).allow("", null),
     address: Joi.string().trim().max(255).allow("", null),
+    neighborhood: optionalText(100),
   }),
 };
 

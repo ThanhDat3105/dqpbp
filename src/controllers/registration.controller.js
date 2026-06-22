@@ -75,7 +75,7 @@ const listTemplates = async (req, res, next) => {
 
     return new SuccessResponse({
       message: "Lấy danh sách biểu mẫu thành công",
-      metaData: { data },
+      metaData: data,
     }).send(res);
   } catch (error) {
     next(error);

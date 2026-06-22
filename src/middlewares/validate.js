@@ -2,10 +2,13 @@ const { cleanupFile } = require("./cleanupFile.middleware");
 
 const tryParseJSON = (value) => {
   if (typeof value === "string") {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        return JSON.parse(value);
+      } catch {
+        return value;
+      }
     }
   }
   return value;

@@ -4,7 +4,7 @@ const db = require("../config/db");
 const bcrypt = require("bcrypt");
 
 const SAFE_COLUMNS = `
-  id, name, department_id, address, lat, lng, enlistment_date,
+  id, name, department_id, address, neighborhood, lat, lng, enlistment_date,
   phone, email, role, unit_code, managed_units, military_rank, date_of_birth,
   is_active, last_login_at, created_at, updated_at,
   unit_code, managed_units
@@ -138,6 +138,7 @@ const create = async (data) => {
     password,
     department,
     address,
+    neighborhood,
     lat,
     lng,
     phone,
@@ -162,8 +163,8 @@ const create = async (data) => {
 
   const { rows } = await db.query(
     `INSERT INTO users
-       (name, email, password_hash, department_id, address, lat, lng, phone, cccd, role, unit_code, managed_units)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       (name, email, password_hash, department_id, address, neighborhood, lat, lng, phone, cccd, role, unit_code, managed_units)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING ${SAFE_COLUMNS}`,
     [
       name,
@@ -171,6 +172,7 @@ const create = async (data) => {
       password_hash,
       department ?? null,
       address ?? null,
+      neighborhood ?? null,
       lat ?? null,
       lng ?? null,
       phone ?? null,
@@ -190,6 +192,7 @@ const UPDATABLE_FIELDS = [
   "name",
   "department_id",
   "address",
+  "neighborhood",
   "lat",
   "lng",
   "phone",

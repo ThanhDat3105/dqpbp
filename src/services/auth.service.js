@@ -293,6 +293,7 @@ const register = async ({
   role,
   phone,
   address,
+  neighborhood,
 }) => {
   // 1. Check email đã tồn tại chưa
   const existingUser = await findUserByEmail(email);
@@ -319,8 +320,8 @@ const register = async ({
 
   const { rows } = await pool.query(
     `WITH new_user AS (
-       INSERT INTO users (name, email, password_hash, role, department_id, phone, address, is_active, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, true, NOW())
+       INSERT INTO users (name, email, password_hash, role, department_id, phone, address, neighborhood, is_active, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, true, NOW())
        RETURNING id, name, email, role, department_id
      )
      SELECT u.*, d.code AS department
@@ -334,6 +335,7 @@ const register = async ({
       departmentId || null,
       phone || null,
       address || null,
+      neighborhood || null,
     ],
   );
 

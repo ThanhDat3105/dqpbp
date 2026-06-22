@@ -4,7 +4,7 @@ const mapService = require("../services/map.service");
 
 const getNhanSu = async (req, res, next) => {
   try {
-    const { loai, khu_pho } = req.query;
+    const { type, neighborhood } = req.query;
 
     const metaData = await mapService.fetchMapPersonnel(
       {
@@ -12,8 +12,8 @@ const getNhanSu = async (req, res, next) => {
         user_id: req.user.user_id,
       },
       {
-        loai: loai ?? null,
-        khu_pho: khu_pho ?? null,
+        type: type ?? null,
+        neighborhood: neighborhood ?? null,
       },
     );
 

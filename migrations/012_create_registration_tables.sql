@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS registrations (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS training_system VARCHAR(100);
+ALTER TABLE registrations ADD COLUMN IF NOT EXISTS temporary_address TEXT;
+
 CREATE TABLE IF NOT EXISTS registration_templates (
   id SERIAL PRIMARY KEY,
   category VARCHAR(20) NOT NULL CHECK (category IN ('tsqs', 'tuoi17', 'tinhnguyen', 'dqtt')),

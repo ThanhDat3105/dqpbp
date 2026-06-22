@@ -4,16 +4,13 @@ const Joi = require("joi");
 const {
   REGISTRATION_CATEGORIES,
   VN_PHONE_PATTERN,
+  TRAINING_SYSTEM,
 } = require("../constant/registration.constant");
 
-const vnPhone = Joi.string()
-  .pattern(VN_PHONE_PATTERN)
-  .required()
-  .messages({
-    "string.pattern.base":
-      "Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0",
-    "any.required": "Số điện thoại là bắt buộc",
-  });
+const vnPhone = Joi.string().pattern(VN_PHONE_PATTERN).required().messages({
+  "string.pattern.base": "Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0",
+  "any.required": "Số điện thoại là bắt buộc",
+});
 
 const createRegistration = {
   body: Joi.object()
@@ -45,6 +42,25 @@ const createRegistration = {
       captcha_token: Joi.string().trim().required().messages({
         "any.required": "captcha_token là bắt buộc",
       }),
+      training_system: Joi.when("category", {
+        is: "tsqs",
+        then: Joi.string()
+          .valid(...Object.values(TRAINING_SYSTEM))
+          .required()
+          .messages({
+            "any.only": `training_system phải là một trong: ${Object.values(TRAINING_SYSTEM).join(", ")}`,
+            "any.required": "training_system là bắt buộc",
+          }),
+        otherwise: Joi.forbidden(),
+      }),
+      temporary_address: Joi.string()
+        .trim()
+        .max(500)
+        .optional()
+        .allow("", null)
+        .messages({
+          "string.max": "temporary_address không được vượt quá 500 ký tự",
+        }),
     })
     .unknown(false),
 };

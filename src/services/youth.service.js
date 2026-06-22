@@ -2,10 +2,7 @@
 
 const db = require("../config/db");
 const XLSX = require("xlsx");
-const {
-  NotFoundError,
-  BadRequestError,
-} = require("../core/error.response");
+const { NotFoundError, BadRequestError } = require("../core/error.response");
 
 const normalizeHeader = (value) =>
   String(value || "")
@@ -27,7 +24,12 @@ const headerAliases = {
   ],
   neighborhood: ["neighborhood", "khu_pho", "khupho"],
   permanent_address: ["permanent_address", "dia_chi_thuong_tru", "dia_chi"],
-  education_level: ["education_level", "trinh_do", "trinh_do_van_hoa", "hoc_van"],
+  education_level: [
+    "education_level",
+    "trinh_do",
+    "trinh_do_van_hoa",
+    "hoc_van",
+  ],
   is_registered: ["is_registered", "da_lam_ho_so", "trang_thai"],
 };
 
@@ -99,7 +101,7 @@ const fetchList = async (filters) => {
 
   const { rows } = await db.query(
     `SELECT
-       id, full_name, date_of_birth,
+       id, full_name, date_of_birth, neighborhood,
        permanent_address, phone, education_level, is_registered
      FROM youth_personnel
      WHERE
@@ -124,6 +126,7 @@ const fetchList = async (filters) => {
       id: r.id,
       full_name: r.full_name,
       date_of_birth: r.date_of_birth,
+      neighborhood: r.neighborhood,
       permanent_address: r.permanent_address,
       phone: r.phone,
       education_level: r.education_level,
@@ -152,6 +155,7 @@ const createYouth = async (payload) => {
   const {
     full_name,
     date_of_birth,
+    neighborhood = null,
     permanent_address = null,
     temporary_address = null,
     phone = null,
@@ -160,12 +164,13 @@ const createYouth = async (payload) => {
   } = payload;
   const { rows } = await db.query(
     `INSERT INTO youth_personnel
-         (full_name, date_of_birth, permanent_address, temporary_address, phone, education_level, is_registered)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+         (full_name, date_of_birth, neighborhood, permanent_address, temporary_address, phone, education_level, is_registered)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        RETURNING *`,
     [
       full_name,
       date_of_birth,
+      neighborhood,
       permanent_address,
       temporary_address,
       phone,
@@ -202,7 +207,9 @@ const importYouthFromExcel = async (filePath) => {
     throw new BadRequestError("File Excel phai co cot full_name hoac Ho ten");
   }
   if (headerMap.date_of_birth === undefined) {
-    throw new BadRequestError("File Excel phai co cot date_of_birth hoac Ngay sinh");
+    throw new BadRequestError(
+      "File Excel phai co cot date_of_birth hoac Ngay sinh",
+    );
   }
 
   const rowsToInsert = [];
@@ -304,6 +311,7 @@ const updateYouth = async (id, payload) => {
   const {
     full_name = null,
     date_of_birth = null,
+    neighborhood = null,
     permanent_address = null,
     temporary_address = null,
     phone = null,
@@ -316,17 +324,19 @@ const updateYouth = async (id, payload) => {
      SET
        full_name         = COALESCE($1, full_name),
        date_of_birth     = COALESCE($2, date_of_birth),
-       permanent_address = COALESCE($3, permanent_address),
-       temporary_address = COALESCE($4, temporary_address),
-       phone             = COALESCE($5, phone),
-       education_level   = COALESCE($6, education_level),
-       is_registered     = COALESCE($7, is_registered),
+       neighborhood      = COALESCE($3, neighborhood),
+       permanent_address = COALESCE($4, permanent_address),
+       temporary_address = COALESCE($5, temporary_address),
+       phone             = COALESCE($6, phone),
+       education_level   = COALESCE($7, education_level),
+       is_registered     = COALESCE($8, is_registered),
        updated_at        = NOW()
-     WHERE id = $8
+     WHERE id = $9
      RETURNING *`,
     [
       full_name,
       date_of_birth,
+      neighborhood,
       permanent_address,
       temporary_address,
       phone,

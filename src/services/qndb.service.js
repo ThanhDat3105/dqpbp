@@ -28,6 +28,7 @@ const importHeaderAliases = {
   ],
   military_rank: ["military_rank", "bac_ham"],
   unit: ["unit", "don_vi"],
+  neighborhood: ["neighborhood", "khu_pho", "khupho"],
   service_start_date: ["service_start_date", "ngay_nhap_ngu", "ngay_bat_dau"],
   service_end_date: ["service_end_date", "ngay_xuat_ngu", "ngay_ket_thuc"],
   reserve_class: ["reserve_class", "hang_du_bi", "hang"],
@@ -89,7 +90,7 @@ const fetchList = async (filters) => {
 
   const { rows } = await db.query(
     `SELECT
-       id, full_name, date_of_birth,
+       id, full_name, date_of_birth, neighborhood,
        permanent_address, phone, education_level,
        military_rank, unit, service_start_date,
        service_end_date, reserve_class, note
@@ -134,6 +135,7 @@ const createQndb = async (payload) => {
   const {
     full_name,
     date_of_birth,
+    neighborhood = null,
     permanent_address = null,
     temporary_address = null,
     phone = null,
@@ -148,14 +150,15 @@ const createQndb = async (payload) => {
 
   const { rows } = await db.query(
     `INSERT INTO quan_nhan_du_bi
-       (full_name, date_of_birth, permanent_address, temporary_address,
+       (full_name, date_of_birth, neighborhood, permanent_address, temporary_address,
         phone, education_level, military_rank, unit,
         service_start_date, service_end_date, reserve_class, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING *`,
     [
       full_name,
       date_of_birth,
+      neighborhood,
       permanent_address,
       temporary_address,
       phone,
@@ -253,6 +256,10 @@ const importQndbFromExcel = async (filePath) => {
       row: rowNumber,
       full_name: fullName,
       date_of_birth: dateOfBirth,
+      neighborhood:
+        headerMap.neighborhood === undefined
+          ? null
+          : getCellText(row[headerMap.neighborhood]) || null,
       permanent_address:
         headerMap.permanent_address === undefined
           ? null
@@ -303,14 +310,15 @@ const importQndbFromExcel = async (filePath) => {
     for (const item of rowsToInsert) {
       const { rows } = await client.query(
         `INSERT INTO quan_nhan_du_bi
-           (full_name, date_of_birth, permanent_address, temporary_address,
+           (full_name, date_of_birth, neighborhood, permanent_address, temporary_address,
             phone, education_level, military_rank, unit,
             service_start_date, service_end_date, reserve_class, note)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          RETURNING id, full_name`,
         [
           item.full_name,
           item.date_of_birth,
+          item.neighborhood,
           item.permanent_address,
           item.temporary_address,
           item.phone,
@@ -349,6 +357,7 @@ const updateQndb = async (id, payload) => {
   const {
     full_name = null,
     date_of_birth = null,
+    neighborhood = null,
     permanent_address = null,
     temporary_address = null,
     phone = null,
@@ -366,22 +375,24 @@ const updateQndb = async (id, payload) => {
      SET
        full_name          = COALESCE($1,  full_name),
        date_of_birth      = COALESCE($2,  date_of_birth),
-       permanent_address  = COALESCE($3,  permanent_address),
-       temporary_address  = COALESCE($4,  temporary_address),
-       phone              = COALESCE($5,  phone),
-       education_level    = COALESCE($6,  education_level),
-       military_rank      = COALESCE($7,  military_rank),
-       unit               = COALESCE($8,  unit),
-       service_start_date = COALESCE($9,  service_start_date),
-       service_end_date   = COALESCE($10, service_end_date),
-       reserve_class      = COALESCE($11, reserve_class),
-       note               = COALESCE($12, note),
+       neighborhood       = COALESCE($3,  neighborhood),
+       permanent_address  = COALESCE($4,  permanent_address),
+       temporary_address  = COALESCE($5,  temporary_address),
+       phone              = COALESCE($6,  phone),
+       education_level    = COALESCE($7,  education_level),
+       military_rank      = COALESCE($8,  military_rank),
+       unit               = COALESCE($9,  unit),
+       service_start_date = COALESCE($10, service_start_date),
+       service_end_date   = COALESCE($11, service_end_date),
+       reserve_class      = COALESCE($12, reserve_class),
+       note               = COALESCE($13, note),
        updated_at         = NOW()
-     WHERE id = $13
+     WHERE id = $14
      RETURNING *`,
     [
       full_name,
       date_of_birth,
+      neighborhood,
       permanent_address,
       temporary_address,
       phone,

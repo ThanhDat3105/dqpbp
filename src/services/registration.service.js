@@ -48,6 +48,8 @@ const create = async (payload, clientIp) => {
     dob,
     workplace,
     guardian_phone,
+    temporary_address,
+    training_system,
   } = payload;
 
   await checkRateLimit({ phone, clientIp });
@@ -55,9 +57,10 @@ const create = async (payload, clientIp) => {
   const { rows } = await db.query(
     `INSERT INTO registrations (
        category, full_name, phone, address, dob,
-       workplace, guardian_phone, status, client_ip
+       workplace, guardian_phone, status, client_ip,
+       temporary_address, training_system
      )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING id, category, status, created_at`,
     [
       category,
@@ -69,6 +72,8 @@ const create = async (payload, clientIp) => {
       guardian_phone,
       REGISTRATION_STATUS.PENDING,
       clientIp || null,
+      temporary_address,
+      training_system,
     ],
   );
 
