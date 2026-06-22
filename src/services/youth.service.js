@@ -113,15 +113,20 @@ const promoteYouthToNguon = async (client, youth, { note = null } = {}) => {
   return rows[0];
 };
 
+const VIETNAM_TZ = "Asia/Ho_Chi_Minh";
+
 const findEligibleForAutoPromote = async (client) => {
   const { rows } = await client.query(
     `SELECT y.*
      FROM youth_personnel y
-     WHERE y.date_of_birth <= (CURRENT_DATE - INTERVAL '18 years')
+     WHERE y.date_of_birth <= (
+         (NOW() AT TIME ZONE $1)::date - INTERVAL '18 years'
+       )::date
        AND NOT EXISTS (
          SELECT 1 FROM nguon n WHERE n.youth_personnel_id = y.id
        )
      ORDER BY y.id ASC`,
+    [VIETNAM_TZ],
   );
 
   return rows;
