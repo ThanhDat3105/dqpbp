@@ -7,6 +7,10 @@ const {
   startDailyDigestJob,
   startDeadlineReminderJob,
 } = require("./jobs/dailyDigest.job");
+const {
+  startYouthAutoPromoteJob,
+  runYouthAutoPromote,
+} = require("./jobs/youthAutoPromote.job");
 
 const PORT = process.env.PORT || 5000;
 
@@ -23,6 +27,7 @@ async function startServer() {
       );
       startDailyDigestJob();
       startDeadlineReminderJob();
+      startYouthAutoPromoteJob();
     });
 
     // Graceful shutdown

@@ -8,15 +8,15 @@ const { authentication } = require("../../middlewares/auth.middleware");
 const { requireRole } = require("../../middlewares/role.middleware");
 const validate = require("../../middlewares/validate");
 const {
-    uploadExcel,
-    handleMulterError,
+  uploadExcel,
+  handleMulterError,
 } = require("../../config/multer.config");
 const {
-    getList,
-    getById,
-    create,
-    update,
-    remove,
+  getList,
+  getById,
+  create,
+  update,
+  remove,
 } = require("../../validations/youth.validation");
 
 // ─── All routes require authentication ───────────────────────────────────────
@@ -33,47 +33,47 @@ router.get("/:id", validate(getById), controller.getById);
 // POST /api/youth
 // Role: DQTT, CHI_HUY, ADMIN (Business Rule #4: DQCD không được phép)
 router.post(
-    "/",
-    requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
-    validate(create),
-    controller.create,
+  "/",
+  requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
+  validate(create),
+  controller.create,
 );
 
 // POST /api/youth/import-excel
 // Role: DQTT, CHI_HUY, ADMIN
 router.post(
-    "/import-excel",
-    requireRole(["TO_TRUONG", "CHI_HUY", "ADMIN"]),
-    uploadExcel.single("file"),
-    handleMulterError,
-    controller.importExcel,
+  "/import-excel",
+  requireRole(["TO_TRUONG", "CHI_HUY", "ADMIN"]),
+  uploadExcel.single("file"),
+  handleMulterError,
+  controller.importExcel,
 );
 
 // PUT /api/youth/:id
 // Role: DQTT, CHI_HUY, ADMIN
 router.put(
-    "/:id",
-    requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
-    validate(update),
-    controller.update,
+  "/:id",
+  requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
+  validate(update),
+  controller.update,
 );
 
 // DELETE /api/youth/:id
 // Role: CHI_HUY, ADMIN only (Business Rule #4)
 router.delete(
-    "/:id",
-    requireRole(["CHI_HUY", "ADMIN"]),
-    validate(remove),
-    controller.remove,
+  "/:id",
+  requireRole(["CHI_HUY", "ADMIN"]),
+  validate(remove),
+  controller.remove,
 );
 
 // POST /api/youth/:id/to-nguon
 // Role: DQTT, CHI_HUY, ADMIN
 router.post(
-    "/:id/to-nguon",
-    requireRole(["DQTT", "CHI_HUY", "ADMIN"]),
-    validate(getById),
-    controller.promoteToNguon,
+  "/:id/to-nguon",
+  requireRole(["DQTT", "CHI_HUY", "ADMIN", "TO_TRUONG"]),
+  validate(getById),
+  controller.promoteToNguon,
 );
 
 module.exports = router;
