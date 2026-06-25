@@ -1,2 +1,6 @@
 ALTER TABLE website_contacts
   ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending';
+
+
+ALTER TABLE website_contacts
+ALTER COLUMN phone DROP NOT NULL;

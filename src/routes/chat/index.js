@@ -13,5 +13,11 @@ router.post(
   // validate(chatValidation),
   ChatController.chat,
 );
+router.post(
+  "/v2",
+  // authentication, // tmp remove
+  // validate(chatValidation),
+  ChatController.chatV2,
+);
 
 module.exports = router;

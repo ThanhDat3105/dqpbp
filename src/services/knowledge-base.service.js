@@ -2,11 +2,11 @@
 
 const fs = require("fs/promises");
 const path = require("path");
-const {
-  KNOWLEDGE_BASE_PATH,
-  SUPPORTED_EXTENSIONS,
-} = require("../config/knowledge-base.config");
+const { KNOWLEDGE_BASE_PATH } = require("../config/knowledge-base.config");
 const { NotFoundError } = require("../core/error.response");
+
+let cachedChunks = null;
+let cachedChunksKey = null;
 
 async function pathExists(targetPath) {
   try {
@@ -31,7 +31,7 @@ async function collectFiles(dir, files = []) {
     const ext = path.extname(entry.name).toLowerCase();
     const isReadme = entry.name.toLowerCase() === "readme.md";
 
-    if (SUPPORTED_EXTENSIONS.has(ext) && !isReadme) {
+    if (!isReadme) {
       files.push(fullPath);
     }
   }
@@ -72,5 +72,4 @@ async function loadKnowledgeBase() {
 
 module.exports = {
   loadKnowledgeBase,
-  KNOWLEDGE_BASE_PATH,
 };

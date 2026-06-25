@@ -121,6 +121,8 @@ const createDocument = {
       category: Joi.string()
         .valid(...DOCUMENT_CATEGORIES)
         .required(),
+      file_url: Joi.string().max(500).allow("", null).optional(),
+      file_size: Joi.string().max(50).allow("", null).optional(),
       status: Joi.string()
         .valid(...DOCUMENT_STATUSES)
         .default("active"),
@@ -141,6 +143,8 @@ const updateDocument = {
       category: Joi.string()
         .valid(...DOCUMENT_CATEGORIES)
         .optional(),
+      file_url: Joi.string().max(500).allow("", null).optional(),
+      file_size: Joi.string().max(50).allow("", null).optional(),
       status: Joi.string()
         .valid(...DOCUMENT_STATUSES)
         .optional(),
@@ -226,7 +230,6 @@ const createContact = {
       full_name: Joi.string().min(2).max(200).required(),
       phone: Joi.string()
         .pattern(/^0\d{9}$/)
-        .required()
         .messages({
           "string.pattern.base":
             "Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0",
@@ -249,7 +252,9 @@ const updateContactStatus = {
   ...idParam,
   body: Joi.object()
     .keys({
-      status: Joi.string().valid(...CONTACT_STATUSES).required(),
+      status: Joi.string()
+        .valid(...CONTACT_STATUSES)
+        .required(),
     })
     .unknown(false),
 };
