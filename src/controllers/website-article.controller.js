@@ -6,6 +6,8 @@ const articleService = require("../services/website-article.service");
 
 const getUserId = (req) => req.user?.id || req.user?.user_id;
 const canDelete = (req) => ["CHI_HUY", "ADMIN"].includes(req.user?.role);
+const getImageFile = (req) =>
+  req.file || req.files?.thumbnail?.[0] || req.files?.file?.[0];
 
 const listPublic = async (req, res, next) => {
   try {
@@ -51,7 +53,11 @@ const listAdmin = async (req, res, next) => {
 
 const create = async (req, res, next) => {
   try {
-    const article = await articleService.create(req.body, getUserId(req));
+    const article = await articleService.create(
+      req.body,
+      getUserId(req),
+      getImageFile(req),
+    );
 
     return new CREATED({
       message: "Tạo bài viết thành công",
@@ -67,7 +73,11 @@ const update = async (req, res, next) => {
     const article = await articleService.update(
       Number(req.params.id),
       req.body,
+      getImageFile(req),
     );
+    if (!article) {
+      throw new NotFoundError("KhĂ´ng tĂ¬m tháº¥y bĂ i viáº¿t");
+    }
 
     return new SuccessResponse({
       message: "Cập nhật thành công",

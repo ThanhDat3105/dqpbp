@@ -10,6 +10,11 @@ const contactController = require("../../controllers/website-contact.controller"
 const quickLinkController = require("../../controllers/website-quick-link.controller");
 const validate = require("../../middlewares/validate");
 const { authentication } = require("../../middlewares/auth.middleware");
+const {
+  uploadDocumentMemory,
+  uploadImageMemory,
+  handleMulterError,
+} = require("../../config/multer.config");
 const { requireRole } = require("../../middlewares/role.middleware");
 const websiteValidation = require("../../validations/website.validation");
 
@@ -59,6 +64,11 @@ router.post(
   "/admin/articles",
   authentication,
   requireRole(contentRoles),
+  uploadImageMemory.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "file", maxCount: 1 },
+  ]),
+  handleMulterError,
   validate(websiteValidation.createArticle),
   articleController.create,
 );
@@ -66,6 +76,11 @@ router.put(
   "/admin/articles/:id",
   authentication,
   requireRole(contentRoles),
+  uploadImageMemory.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "file", maxCount: 1 },
+  ]),
+  handleMulterError,
   validate(websiteValidation.updateArticle),
   articleController.update,
 );
@@ -94,6 +109,8 @@ router.post(
   "/admin/documents",
   authentication,
   requireRole(contentRoles),
+  uploadDocumentMemory.single("file"),
+  handleMulterError,
   validate(websiteValidation.createDocument),
   documentController.create,
 );
@@ -101,6 +118,8 @@ router.put(
   "/admin/documents/:id",
   authentication,
   requireRole(contentRoles),
+  uploadDocumentMemory.single("file"),
+  handleMulterError,
   validate(websiteValidation.updateDocument),
   documentController.update,
 );

@@ -1,6 +1,8 @@
 "use strict";
 
 const db = require("../config/db");
+const { BadRequestError } = require("../core/error.response");
+const { deleteFromR2, uploadToR2 } = require("./r2.service");
 
 const toPage = (value) => Number(value) || 1;
 const toLimit = (value) => Number(value) || 10;
@@ -91,19 +93,36 @@ const listAdmin = async (filters) => {
   return buildListResponse(rows, page, limit);
 };
 
-const create = async (payload, userId) => {
+const normalizeOriginalFileName = (value) => String(value || "");
+
+const formatFileSize = (bytes) => {
+  const size = Number(bytes) || 0;
+  return String(size);
+};
+
+const create = async (payload, userId, file) => {
+  if (!file) {
+    throw new BadRequestError("File is required");
+  }
+
   const {
     title,
     doc_number = null,
     issued_by = null,
     issued_date = null,
     category,
-    file_url = null,
-    file_size = null,
     status = "active",
     display_order = 0,
     is_visible = true,
   } = payload;
+
+  const originalName = normalizeOriginalFileName(file.originalname);
+  const fileUrl = await uploadToR2(
+    file.buffer,
+    originalName,
+    file.mimetype,
+    "website-documents",
+  );
 
   const { rows } = await db.query(
     `INSERT INTO website_documents
@@ -117,8 +136,8 @@ const create = async (payload, userId) => {
       issued_by,
       issued_date,
       category,
-      file_url,
-      file_size,
+      fileUrl,
+      formatFileSize(file.size),
       status,
       display_order,
       is_visible,
@@ -129,17 +148,17 @@ const create = async (payload, userId) => {
   return rows[0];
 };
 
-const update = async (id, payload) => {
+const update = async (id, payload, file) => {
   const fields = [];
   const values = [];
+  let previousFileUrl = null;
+  let uploadedFileUrl = null;
   const allowedFields = [
     "title",
     "doc_number",
     "issued_by",
     "issued_date",
     "category",
-    "file_url",
-    "file_size",
     "status",
     "display_order",
     "is_visible",
@@ -152,25 +171,101 @@ const update = async (id, payload) => {
     }
   });
 
+  if (file) {
+    const { rows: existingRows } = await db.query(
+      "SELECT file_url FROM website_documents WHERE id = $1",
+      [id],
+    );
+
+    if (existingRows.length === 0) return null;
+
+    previousFileUrl = existingRows[0].file_url;
+
+    const originalName = normalizeOriginalFileName(file.originalname);
+    const fileUrl = await uploadToR2(
+      file.buffer,
+      originalName,
+      file.mimetype,
+      "website-documents",
+    );
+    uploadedFileUrl = fileUrl;
+
+    values.push(fileUrl);
+    fields.push(`file_url = $${values.length}`);
+    values.push(formatFileSize(file.size));
+    fields.push(`file_size = $${values.length}`);
+  }
+
+  if (fields.length === 0) {
+    throw new BadRequestError("No data to update");
+  }
+
   values.push(id);
 
-  const { rows } = await db.query(
-    `UPDATE website_documents
-     SET ${fields.join(", ")}, updated_at = NOW()
-     WHERE id = $${values.length}
-     RETURNING *`,
-    values,
-  );
+  let rows;
+  try {
+    ({ rows } = await db.query(
+      `UPDATE website_documents
+       SET ${fields.join(", ")}, updated_at = NOW()
+       WHERE id = $${values.length}
+       RETURNING *`,
+      values,
+    ));
+  } catch (error) {
+    if (uploadedFileUrl) {
+      try {
+        await deleteFromR2(uploadedFileUrl);
+      } catch (deleteError) {
+        console.error("Failed to delete uploaded website document file", deleteError);
+      }
+    }
+    throw error;
+  }
+
+  if (rows[0] && previousFileUrl) {
+    try {
+      await deleteFromR2(previousFileUrl);
+    } catch (error) {
+      console.error("Failed to delete old website document file", error);
+    }
+  }
 
   return rows[0] || null;
 };
 
 const remove = async (id) => {
-  const { rows } = await db.query(
-    "DELETE FROM website_documents WHERE id = $1 RETURNING id",
-    [id],
-  );
-  return rows[0] || null;
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const { rows: existingRows } = await client.query(
+      "SELECT id, file_url FROM website_documents WHERE id = $1 FOR UPDATE",
+      [id],
+    );
+
+    if (existingRows.length === 0) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    if (existingRows[0].file_url) {
+      await deleteFromR2(existingRows[0].file_url);
+    }
+
+    const { rows } = await client.query(
+      "DELETE FROM website_documents WHERE id = $1 RETURNING id",
+      [id],
+    );
+
+    await client.query("COMMIT");
+    return rows[0] || null;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 module.exports = { listPublic, listAdmin, create, update, remove };

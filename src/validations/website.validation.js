@@ -9,13 +9,7 @@ const ARTICLE_CATEGORIES = [
   "Văn bản pháp quy",
 ];
 
-const DOCUMENT_CATEGORIES = [
-  "nhiem-vu",
-  "hanh-chinh",
-  "tuyen-truyen",
-  "bao-mat",
-  "hau-can",
-];
+const DOCUMENT_CATEGORIES = ["tsqs", "tuoi17", "tinhnguyen", "dqtt"];
 const DOCUMENT_STATUSES = ["active", "expired", "new"];
 const CONTACT_STATUSES = ["pending", "approved", "rejected"];
 
@@ -61,10 +55,10 @@ const createArticle = {
         .valid(...ARTICLE_CATEGORIES)
         .required(),
       content: Joi.string().allow("", null).optional(),
-      thumbnail_url: Joi.string().max(500).allow("", null).optional(),
       display_order: Joi.number().integer().default(0),
       is_featured: Joi.boolean().default(false),
       is_visible: Joi.boolean().default(true),
+      excerpt: Joi.string().allow("", null).optional(),
     })
     .unknown(false),
 };
@@ -79,12 +73,10 @@ const updateArticle = {
         .optional(),
       content: Joi.string().allow("", null).optional(),
       excerpt: Joi.string().allow("", null).optional(),
-      thumbnail_url: Joi.string().max(500).allow("", null).optional(),
       display_order: Joi.number().integer().optional(),
       is_featured: Joi.boolean().optional(),
       is_visible: Joi.boolean().optional(),
     })
-    .min(1)
     .unknown(false),
 };
 
@@ -129,8 +121,6 @@ const createDocument = {
       category: Joi.string()
         .valid(...DOCUMENT_CATEGORIES)
         .required(),
-      file_url: Joi.string().max(500).allow("", null).optional(),
-      file_size: Joi.string().max(50).allow("", null).optional(),
       status: Joi.string()
         .valid(...DOCUMENT_STATUSES)
         .default("active"),
@@ -151,15 +141,12 @@ const updateDocument = {
       category: Joi.string()
         .valid(...DOCUMENT_CATEGORIES)
         .optional(),
-      file_url: Joi.string().max(500).allow("", null).optional(),
-      file_size: Joi.string().max(50).allow("", null).optional(),
       status: Joi.string()
         .valid(...DOCUMENT_STATUSES)
         .optional(),
       display_order: Joi.number().integer().optional(),
       is_visible: Joi.boolean().optional(),
     })
-    .min(1)
     .unknown(false),
 };
 
