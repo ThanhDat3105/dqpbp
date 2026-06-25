@@ -27,7 +27,27 @@ const upload = {
   }),
 };
 
+const idParam = {
+  params: Joi.object().keys({
+    id: Joi.number().integer().positive().required(),
+  }),
+};
+
+const update = {
+  ...idParam,
+  body: Joi.object().keys({
+    title: Joi.string().max(255).allow("", null).optional(),
+    description: Joi.string().allow("", null).optional(),
+    department_id: Joi.number().integer().positive().optional(),
+    departmentId: Joi.number().integer().positive().optional(),
+    is_public: Joi.boolean().optional(),
+    isPublic: Joi.boolean().optional(),
+  }),
+};
+
 module.exports = {
   getList,
   upload,
+  update,
+  remove: idParam,
 };

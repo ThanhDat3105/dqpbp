@@ -1,8 +1,8 @@
 "use strict";
 
 const db = require("../config/db");
-const { uploadToR2 } = require("./r2.service");
-const { BadRequestError } = require("../core/error.response");
+const { uploadToR2, deleteFromR2 } = require("./r2.service");
+const { BadRequestError, NotFoundError } = require("../core/error.response");
 
 const PRIVILEGED_ROLES = ["CHI_HUY", "TO_TRUONG", "ADMIN"];
 
@@ -147,7 +147,145 @@ const uploadDocument = async ({ file, payload, user }) => {
   return rows[0];
 };
 
+const updateDocument = async ({ id, file, payload }) => {
+  const values = [];
+  const fields = [];
+  let uploadedFileUrl = null;
+
+  const addField = (field, value) => {
+    values.push(value);
+    fields.push(`${field} = $${values.length}`);
+  };
+
+  if (payload.title !== undefined) {
+    const title = String(payload.title || "").trim();
+    if (!title) {
+      throw new BadRequestError("title is required");
+    }
+    addField("title", title);
+  }
+
+  if (payload.description !== undefined) {
+    addField(
+      "description",
+      payload.description ? String(payload.description).trim() : null,
+    );
+  }
+
+  const payloadDepartmentId = payload.department_id ?? payload.departmentId;
+  if (payloadDepartmentId !== undefined) {
+    const departmentId = Number(payloadDepartmentId);
+    if (!departmentId) {
+      throw new BadRequestError("department_id is required");
+    }
+    addField("department_id", departmentId);
+  }
+
+  const payloadIsPublic = payload.is_public ?? payload.isPublic;
+  if (payloadIsPublic !== undefined) {
+    addField("is_public", normalizeBooleanFilter(payloadIsPublic) ?? false);
+  }
+
+  if (!file && fields.length === 0) {
+    throw new BadRequestError("No data to update");
+  }
+
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const { rows: existingRows } = await client.query(
+      "SELECT id, file_url FROM documents WHERE id = $1 FOR UPDATE",
+      [id],
+    );
+
+    if (existingRows.length === 0) {
+      throw new NotFoundError("Document not found");
+    }
+
+    if (file) {
+      const originalName = normalizeOriginalFileName(file.originalname);
+      uploadedFileUrl = await uploadToR2(
+        file.buffer,
+        originalName,
+        file.mimetype,
+        "documents",
+      );
+
+      if (existingRows[0].file_url) {
+        await deleteFromR2(existingRows[0].file_url);
+      }
+
+      addField("file_url", uploadedFileUrl);
+      addField("file_name", originalName);
+    }
+
+    values.push(id);
+    const { rows } = await client.query(
+      `UPDATE documents
+       SET ${fields.join(", ")}, updated_at = NOW()
+       WHERE id = $${values.length}
+       RETURNING *`,
+      values,
+    );
+
+    await client.query("COMMIT");
+    return rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    if (uploadedFileUrl) {
+      try {
+        await deleteFromR2(uploadedFileUrl);
+      } catch (deleteError) {
+        console.error("Failed to delete uploaded document file", deleteError);
+      }
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
+const removeDocument = async (id) => {
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const { rows: existingRows } = await client.query(
+      "SELECT id, file_url FROM documents WHERE id = $1 FOR UPDATE",
+      [id],
+    );
+
+    if (existingRows.length === 0) {
+      throw new NotFoundError("Document not found");
+    }
+
+    if (existingRows[0].file_url) {
+      await deleteFromR2(existingRows[0].file_url);
+    }
+
+    const { rows } = await client.query(
+      "DELETE FROM documents WHERE id = $1 RETURNING id",
+      [id],
+    );
+
+    await client.query("COMMIT");
+    return rows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+};
+
 module.exports = {
   fetchList,
   uploadDocument,
+  updateDocument,
+  removeDocument,
 };

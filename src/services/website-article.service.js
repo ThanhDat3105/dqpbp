@@ -1,6 +1,8 @@
 "use strict";
 
 const db = require("../config/db");
+const { BadRequestError } = require("../core/error.response");
+const { deleteFromR2, uploadToR2 } = require("./r2.service");
 const slugify = require("../utils/slugify");
 
 const toPage = (value) => Number(value) || 1;
@@ -22,6 +24,18 @@ const ensureUniqueSlug = async (title, id) => {
     [baseSlug, id],
   );
   return rows.length > 0 ? `${baseSlug}-${id}` : baseSlug;
+};
+
+const normalizeOriginalFileName = (value) => String(value || "");
+
+const uploadArticleThumbnail = async (file) => {
+  const originalName = normalizeOriginalFileName(file.originalname);
+  return uploadToR2(
+    file.buffer,
+    originalName,
+    file.mimetype,
+    "website-articles",
+  );
 };
 
 const listPublic = async (filters) => {
@@ -72,7 +86,9 @@ const listAdmin = async (filters) => {
 
   if (filters.keyword) {
     params.push(`%${filters.keyword}%`);
-    where.push(`(title ILIKE $${params.length} OR slug ILIKE $${params.length})`);
+    where.push(
+      `(title ILIKE $${params.length} OR slug ILIKE $${params.length})`,
+    );
   }
 
   if (filters.category) {
@@ -94,55 +110,78 @@ const listAdmin = async (filters) => {
   return buildListResponse(rows, page, limit);
 };
 
-const create = async (payload, userId) => {
+const create = async (payload, userId, file) => {
+  if (!file) {
+    throw new BadRequestError("Thumbnail image is required");
+  }
+
   const {
     title,
     category,
     content = null,
-    thumbnail_url = null,
     display_order = 0,
     is_featured = false,
     is_visible = true,
   } = payload;
 
-  const { rows } = await db.query(
-    `INSERT INTO website_articles
-       (title, content, category, thumbnail_url, display_order, is_featured, is_visible, created_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     RETURNING *`,
-    [
-      title,
-      content,
-      category,
-      thumbnail_url,
-      display_order,
-      is_featured,
-      is_visible,
-      userId,
-    ],
-  );
+  const thumbnailUrl = await uploadArticleThumbnail(file);
+  const client = await db.connect();
 
-  const article = rows[0];
-  const slug = await ensureUniqueSlug(title, article.id);
-  const { rows: updatedRows } = await db.query(
-    "UPDATE website_articles SET slug = $1 WHERE id = $2 RETURNING *",
-    [slug, article.id],
-  );
+  try {
+    await client.query("BEGIN");
 
-  return updatedRows[0];
+    const { rows } = await client.query(
+      `INSERT INTO website_articles
+         (title, content, category, thumbnail_url, display_order, is_featured, is_visible, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING *`,
+      [
+        title,
+        content,
+        category,
+        thumbnailUrl,
+        display_order,
+        is_featured,
+        is_visible,
+        userId,
+      ],
+    );
+
+    const article = rows[0];
+    const slug = await ensureUniqueSlug(title, article.id);
+    const { rows: updatedRows } = await client.query(
+      "UPDATE website_articles SET slug = $1 WHERE id = $2 RETURNING *",
+      [slug, article.id],
+    );
+
+    await client.query("COMMIT");
+    return updatedRows[0];
+  } catch (error) {
+    await client.query("ROLLBACK");
+    try {
+      await deleteFromR2(thumbnailUrl);
+    } catch (deleteError) {
+      console.error("Failed to delete uploaded article thumbnail", deleteError);
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
-const update = async (id, payload) => {
+const update = async (id, payload, file) => {
   const fields = [];
   const values = [];
+  let previousThumbnailUrl = null;
+  let uploadedThumbnailUrl = null;
   const allowedFields = [
     "title",
     "category",
     "content",
-    "thumbnail_url",
     "display_order",
     "is_featured",
     "is_visible",
+    "excerpt",
   ];
 
   allowedFields.forEach((field) => {
@@ -158,25 +197,91 @@ const update = async (id, payload) => {
     fields.push(`slug = $${values.length}`);
   }
 
+  if (file) {
+    const { rows: existingRows } = await db.query(
+      "SELECT thumbnail_url FROM website_articles WHERE id = $1",
+      [id],
+    );
+
+    if (existingRows.length === 0) return null;
+
+    previousThumbnailUrl = existingRows[0].thumbnail_url;
+    uploadedThumbnailUrl = await uploadArticleThumbnail(file);
+
+    values.push(uploadedThumbnailUrl);
+    fields.push(`thumbnail_url = $${values.length}`);
+  }
+
+  if (fields.length === 0) {
+    throw new BadRequestError("No data to update");
+  }
+
   values.push(id);
 
-  const { rows } = await db.query(
-    `UPDATE website_articles
-     SET ${fields.join(", ")}, updated_at = NOW()
-     WHERE id = $${values.length}
-     RETURNING *`,
-    values,
-  );
+  let rows;
+  try {
+    ({ rows } = await db.query(
+      `UPDATE website_articles
+       SET ${fields.join(", ")}, updated_at = NOW()
+       WHERE id = $${values.length}
+       RETURNING *`,
+      values,
+    ));
+  } catch (error) {
+    if (uploadedThumbnailUrl) {
+      try {
+        await deleteFromR2(uploadedThumbnailUrl);
+      } catch (deleteError) {
+        console.error("Failed to delete uploaded article thumbnail", deleteError);
+      }
+    }
+    throw error;
+  }
+
+  if (rows[0] && previousThumbnailUrl) {
+    try {
+      await deleteFromR2(previousThumbnailUrl);
+    } catch (error) {
+      console.error("Failed to delete old article thumbnail", error);
+    }
+  }
 
   return rows[0] || null;
 };
 
 const remove = async (id) => {
-  const { rows } = await db.query(
-    "DELETE FROM website_articles WHERE id = $1 RETURNING id",
-    [id],
-  );
-  return rows[0] || null;
+  const client = await db.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const { rows: existingRows } = await client.query(
+      "SELECT id, thumbnail_url FROM website_articles WHERE id = $1 FOR UPDATE",
+      [id],
+    );
+
+    if (existingRows.length === 0) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    if (existingRows[0].thumbnail_url) {
+      await deleteFromR2(existingRows[0].thumbnail_url);
+    }
+
+    const { rows } = await client.query(
+      "DELETE FROM website_articles WHERE id = $1 RETURNING id",
+      [id],
+    );
+
+    await client.query("COMMIT");
+    return rows[0] || null;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 };
 
 const toggleVisible = async (id) => {

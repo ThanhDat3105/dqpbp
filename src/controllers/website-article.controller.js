@@ -1,81 +1,126 @@
 "use strict";
 
+const { CREATED, SuccessResponse } = require("../core/success.response");
+const { ForbiddenError, NotFoundError } = require("../core/error.response");
 const articleService = require("../services/website-article.service");
 
 const getUserId = (req) => req.user?.id || req.user?.user_id;
 const canDelete = (req) => ["CHI_HUY", "ADMIN"].includes(req.user?.role);
+const getImageFile = (req) =>
+  req.file || req.files?.thumbnail?.[0] || req.files?.file?.[0];
 
-const handleServerError = (res) =>
-  res.status(500).json({ message: "Lỗi server" });
-
-const listPublic = async (req, res) => {
+const listPublic = async (req, res, next) => {
   try {
     const result = await articleService.listPublic(req.query);
-    return res.status(200).json(result);
+
+    return new SuccessResponse({
+      message: "Lấy danh sách bài viết công khai thành công",
+      metaData: result,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    return next(error);
   }
 };
 
-const getPublicById = async (req, res) => {
+const getPublicById = async (req, res, next) => {
   try {
     const article = await articleService.getPublicById(Number(req.params.id));
-    if (!article) return res.status(404).json({ message: "Không tìm thấy bài viết" });
-    return res.status(200).json(article);
+    if (!article) {
+      throw new NotFoundError("Không tìm thấy bài viết");
+    }
+
+    return new SuccessResponse({
+      message: "Lấy chi tiết bài viết thành công",
+      metaData: article,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    return next(error);
   }
 };
 
-const listAdmin = async (req, res) => {
+const listAdmin = async (req, res, next) => {
   try {
     const result = await articleService.listAdmin(req.query);
-    return res.status(200).json(result);
+
+    return new SuccessResponse({
+      message: "Lấy danh sách bài viết quản trị thành công",
+      metaData: result,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    return next(error);
   }
 };
 
-const create = async (req, res) => {
+const create = async (req, res, next) => {
   try {
-    const article = await articleService.create(req.body, getUserId(req));
-    return res.status(201).json(article);
+    const article = await articleService.create(
+      req.body,
+      getUserId(req),
+      getImageFile(req),
+    );
+
+    return new CREATED({
+      message: "Tạo bài viết thành công",
+      metaData: article,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    return next(error);
   }
 };
 
-const update = async (req, res) => {
+const update = async (req, res, next) => {
   try {
-    const article = await articleService.update(Number(req.params.id), req.body);
-    if (!article) return res.status(404).json({ message: "Không tìm thấy bài viết" });
-    return res.status(200).json(article);
+    const article = await articleService.update(
+      Number(req.params.id),
+      req.body,
+      getImageFile(req),
+    );
+    if (!article) {
+      throw new NotFoundError("KhĂ´ng tĂ¬m tháº¥y bĂ i viáº¿t");
+    }
+
+    return new SuccessResponse({
+      message: "Cập nhật thành công",
+      metaData: article,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    return next(error);
   }
 };
 
-const remove = async (req, res) => {
+const remove = async (req, res, next) => {
   try {
     if (!canDelete(req)) {
-      return res.status(403).json({ message: "Không có quyền xóa" });
+      throw new ForbiddenError("Không có quyền xóa bài viết");
     }
 
     const article = await articleService.remove(Number(req.params.id));
-    if (!article) return res.status(404).json({ message: "Không tìm thấy bài viết" });
-    return res.status(200).json({ success: true });
+    if (!article) {
+      throw new NotFoundError("Không tìm thấy bài viết");
+    }
+
+    return new SuccessResponse({
+      message: "Xóa bài viết thành công",
+      metaData: article,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    return next(error);
   }
 };
 
-const toggleVisible = async (req, res) => {
+const toggleVisible = async (req, res, next) => {
   try {
     const article = await articleService.toggleVisible(Number(req.params.id));
-    if (!article) return res.status(404).json({ message: "Không tìm thấy bài viết" });
-    return res.status(200).json(article);
+    if (!article) {
+      throw new NotFoundError("Không tìm thấy bài viết");
+    }
+
+    return new SuccessResponse({
+      message: "Cập nhật trạng thái hiển thị thành công",
+      metaData: article,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    return next(error);
   }
 };
 

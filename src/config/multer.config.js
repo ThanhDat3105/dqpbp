@@ -101,6 +101,30 @@ const uploadMemory = multer({
   fileFilter: mediaFilter,
 });
 
+const imageMimeTypes = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/jpg",
+  "image/webp",
+];
+
+const imageExtensions = /\.(jpeg|jpg|png|gif|webp)$/i;
+
+const imageFilter = (req, file, cb) => {
+  if (checkFile(file, imageMimeTypes, imageExtensions)) {
+    cb(null, true);
+  } else {
+    cb(new Error("Only image files are allowed"), false);
+  }
+};
+
+const uploadImageMemory = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: imageFilter,
+});
+
 // ===== EXCEL =====
 const excelMimeTypes = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -209,6 +233,7 @@ module.exports = {
   uploadExcel,
   uploadDocument,
   uploadMemory,
+  uploadImageMemory,
   uploadDocumentMemory,
   handleMulterError,
 };

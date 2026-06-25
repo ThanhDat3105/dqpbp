@@ -7,8 +7,14 @@ const articleController = require("../../controllers/website-article.controller"
 const documentController = require("../../controllers/website-document.controller");
 const slideController = require("../../controllers/website-slide.controller");
 const contactController = require("../../controllers/website-contact.controller");
+const quickLinkController = require("../../controllers/website-quick-link.controller");
 const validate = require("../../middlewares/validate");
 const { authentication } = require("../../middlewares/auth.middleware");
+const {
+  uploadDocumentMemory,
+  uploadImageMemory,
+  handleMulterError,
+} = require("../../config/multer.config");
 const { requireRole } = require("../../middlewares/role.middleware");
 const websiteValidation = require("../../validations/website.validation");
 
@@ -35,6 +41,12 @@ router.get(
   validate(websiteValidation.publicSlides),
   slideController.listPublic,
 );
+
+router.get(
+  "/quick-links",
+  validate(websiteValidation.publicQuickLinks),
+  quickLinkController.listPublic,
+);
 router.post(
   "/contacts",
   validate(websiteValidation.createContact),
@@ -52,6 +64,11 @@ router.post(
   "/admin/articles",
   authentication,
   requireRole(contentRoles),
+  uploadImageMemory.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "file", maxCount: 1 },
+  ]),
+  handleMulterError,
   validate(websiteValidation.createArticle),
   articleController.create,
 );
@@ -59,6 +76,11 @@ router.put(
   "/admin/articles/:id",
   authentication,
   requireRole(contentRoles),
+  uploadImageMemory.fields([
+    { name: "thumbnail", maxCount: 1 },
+    { name: "file", maxCount: 1 },
+  ]),
+  handleMulterError,
   validate(websiteValidation.updateArticle),
   articleController.update,
 );
@@ -87,6 +109,8 @@ router.post(
   "/admin/documents",
   authentication,
   requireRole(contentRoles),
+  uploadDocumentMemory.single("file"),
+  handleMulterError,
   validate(websiteValidation.createDocument),
   documentController.create,
 );
@@ -94,6 +118,8 @@ router.put(
   "/admin/documents/:id",
   authentication,
   requireRole(contentRoles),
+  uploadDocumentMemory.single("file"),
+  handleMulterError,
   validate(websiteValidation.updateDocument),
   documentController.update,
 );
@@ -133,6 +159,34 @@ router.delete(
 );
 
 router.get(
+  "/admin/quick-links",
+  authentication,
+  requireRole(contentRoles),
+  validate(websiteValidation.adminQuickLinks),
+  quickLinkController.listAdmin,
+);
+router.post(
+  "/admin/quick-links",
+  authentication,
+  requireRole(contentRoles),
+  validate(websiteValidation.createQuickLink),
+  quickLinkController.create,
+);
+router.put(
+  "/admin/quick-links/:id",
+  authentication,
+  requireRole(contentRoles),
+  validate(websiteValidation.updateQuickLink),
+  quickLinkController.update,
+);
+router.delete(
+  "/admin/quick-links/:id",
+  authentication,
+  validate(websiteValidation.idParam),
+  quickLinkController.remove,
+);
+
+router.get(
   "/admin/contacts",
   authentication,
   requireRole(managerRoles),
@@ -145,6 +199,13 @@ router.patch(
   requireRole(managerRoles),
   validate(websiteValidation.idParam),
   contactController.markRead,
+);
+router.patch(
+  "/admin/contacts/:id/status",
+  authentication,
+  requireRole(managerRoles),
+  validate(websiteValidation.updateContactStatus),
+  contactController.updateStatus,
 );
 
 module.exports = router;
