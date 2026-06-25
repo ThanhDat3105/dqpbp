@@ -1,16 +1,20 @@
 "use strict";
 
+const { CREATED, SuccessResponse } = require("../core/success.response");
 const contactService = require("../services/website-contact.service");
 
 const handleServerError = (res) =>
   res.status(500).json({ message: "Lỗi server" });
 
-const create = async (req, res) => {
+const create = async (req, res, next) => {
   try {
-    await contactService.create(req.body);
-    return res.status(201).json({ success: true, message: "Gửi thành công" });
+    const contact = await contactService.create(req.body);
+    return new CREATED({
+      message: "Gửi liên hệ thành công",
+      metaData: contact,
+    }).send(res);
   } catch (error) {
-    return handleServerError(res);
+    next(error);
   }
 };
 
@@ -26,11 +30,30 @@ const listAdmin = async (req, res) => {
 const markRead = async (req, res) => {
   try {
     const contact = await contactService.markRead(Number(req.params.id));
-    if (!contact) return res.status(404).json({ message: "Không tìm thấy liên hệ" });
+    if (!contact)
+      return res.status(404).json({ message: "Không tìm thấy liên hệ" });
     return res.status(200).json(contact);
   } catch (error) {
     return handleServerError(res);
   }
 };
 
-module.exports = { create, listAdmin, markRead };
+const updateStatus = async (req, res, next) => {
+  try {
+    const contact = await contactService.updateStatus(
+      Number(req.params.id),
+      req.body.status,
+    );
+    if (!contact) {
+      return res.status(404).json({ message: "Không tìm thấy liên hệ" });
+    }
+    return new SuccessResponse({
+      message: "Cập nhật trạng thái thành công",
+      metaData: { id: contact.id, status: contact.status },
+    }).send(res);
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { create, listAdmin, markRead, updateStatus };

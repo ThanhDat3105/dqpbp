@@ -3,11 +3,12 @@
 const Joi = require("joi");
 
 const ARTICLE_CATEGORIES = [
-  "hoat-dong",
-  "tin-tuc",
-  "thong-bao",
-  "van-ban-phap-quy",
+  "Hoạt động",
+  "Tin tức",
+  "Thông báo",
+  "Văn bản pháp quy",
 ];
+
 const DOCUMENT_CATEGORIES = [
   "nhiem-vu",
   "hanh-chinh",
@@ -16,6 +17,7 @@ const DOCUMENT_CATEGORIES = [
   "hau-can",
 ];
 const DOCUMENT_STATUSES = ["active", "expired", "new"];
+const CONTACT_STATUSES = ["pending", "approved", "rejected"];
 
 const idParam = {
   params: Joi.object().keys({
@@ -32,7 +34,9 @@ const boolQuery = Joi.boolean().truthy("true").falsy("false");
 
 const publicArticles = {
   query: Joi.object().keys({
-    category: Joi.string().valid(...ARTICLE_CATEGORIES).optional(),
+    category: Joi.string()
+      .valid(...ARTICLE_CATEGORIES)
+      .optional(),
     featured: boolQuery.optional(),
     ...paginationQuery,
   }),
@@ -41,7 +45,10 @@ const publicArticles = {
 const adminArticles = {
   query: Joi.object().keys({
     keyword: Joi.string().max(200).allow("", null).optional(),
-    category: Joi.string().valid(...ARTICLE_CATEGORIES).allow("", null).optional(),
+    category: Joi.string()
+      .valid(...ARTICLE_CATEGORIES)
+      .allow("", null)
+      .optional(),
     ...paginationQuery,
   }),
 };
@@ -50,7 +57,9 @@ const createArticle = {
   body: Joi.object()
     .keys({
       title: Joi.string().min(2).max(500).required(),
-      category: Joi.string().valid(...ARTICLE_CATEGORIES).required(),
+      category: Joi.string()
+        .valid(...ARTICLE_CATEGORIES)
+        .required(),
       content: Joi.string().allow("", null).optional(),
       thumbnail_url: Joi.string().max(500).allow("", null).optional(),
       display_order: Joi.number().integer().default(0),
@@ -65,8 +74,11 @@ const updateArticle = {
   body: Joi.object()
     .keys({
       title: Joi.string().min(2).max(500).optional(),
-      category: Joi.string().valid(...ARTICLE_CATEGORIES).optional(),
+      category: Joi.string()
+        .valid(...ARTICLE_CATEGORIES)
+        .optional(),
       content: Joi.string().allow("", null).optional(),
+      excerpt: Joi.string().allow("", null).optional(),
       thumbnail_url: Joi.string().max(500).allow("", null).optional(),
       display_order: Joi.number().integer().optional(),
       is_featured: Joi.boolean().optional(),
@@ -78,8 +90,14 @@ const updateArticle = {
 
 const publicDocuments = {
   query: Joi.object().keys({
-    category: Joi.string().valid(...DOCUMENT_CATEGORIES).allow("", null).optional(),
-    status: Joi.string().valid(...DOCUMENT_STATUSES).allow("", null).optional(),
+    category: Joi.string()
+      .valid(...DOCUMENT_CATEGORIES)
+      .allow("", null)
+      .optional(),
+    status: Joi.string()
+      .valid(...DOCUMENT_STATUSES)
+      .allow("", null)
+      .optional(),
     year: Joi.number().integer().min(1900).max(3000).optional(),
     keyword: Joi.string().max(200).allow("", null).optional(),
     ...paginationQuery,
@@ -89,8 +107,14 @@ const publicDocuments = {
 const adminDocuments = {
   query: Joi.object().keys({
     keyword: Joi.string().max(200).allow("", null).optional(),
-    category: Joi.string().valid(...DOCUMENT_CATEGORIES).allow("", null).optional(),
-    status: Joi.string().valid(...DOCUMENT_STATUSES).allow("", null).optional(),
+    category: Joi.string()
+      .valid(...DOCUMENT_CATEGORIES)
+      .allow("", null)
+      .optional(),
+    status: Joi.string()
+      .valid(...DOCUMENT_STATUSES)
+      .allow("", null)
+      .optional(),
     ...paginationQuery,
   }),
 };
@@ -102,10 +126,14 @@ const createDocument = {
       doc_number: Joi.string().max(100).allow("", null).optional(),
       issued_by: Joi.string().max(200).allow("", null).optional(),
       issued_date: Joi.date().allow(null).optional(),
-      category: Joi.string().valid(...DOCUMENT_CATEGORIES).required(),
+      category: Joi.string()
+        .valid(...DOCUMENT_CATEGORIES)
+        .required(),
       file_url: Joi.string().max(500).allow("", null).optional(),
       file_size: Joi.string().max(50).allow("", null).optional(),
-      status: Joi.string().valid(...DOCUMENT_STATUSES).default("active"),
+      status: Joi.string()
+        .valid(...DOCUMENT_STATUSES)
+        .default("active"),
       display_order: Joi.number().integer().default(0),
       is_visible: Joi.boolean().default(true),
     })
@@ -120,10 +148,14 @@ const updateDocument = {
       doc_number: Joi.string().max(100).allow("", null).optional(),
       issued_by: Joi.string().max(200).allow("", null).optional(),
       issued_date: Joi.date().allow(null).optional(),
-      category: Joi.string().valid(...DOCUMENT_CATEGORIES).optional(),
+      category: Joi.string()
+        .valid(...DOCUMENT_CATEGORIES)
+        .optional(),
       file_url: Joi.string().max(500).allow("", null).optional(),
       file_size: Joi.string().max(50).allow("", null).optional(),
-      status: Joi.string().valid(...DOCUMENT_STATUSES).optional(),
+      status: Joi.string()
+        .valid(...DOCUMENT_STATUSES)
+        .optional(),
       display_order: Joi.number().integer().optional(),
       is_visible: Joi.boolean().optional(),
     })
@@ -146,7 +178,6 @@ const adminSlides = {
 const createSlide = {
   body: Joi.object()
     .keys({
-      name: Joi.string().min(2).max(300).required(),
       image_url: Joi.string().max(500).allow("", null).optional(),
       display_order: Joi.number().integer().default(0),
       is_featured: Joi.boolean().default(false),
@@ -159,10 +190,43 @@ const updateSlide = {
   ...idParam,
   body: Joi.object()
     .keys({
-      name: Joi.string().min(2).max(300).optional(),
       image_url: Joi.string().max(500).allow("", null).optional(),
       display_order: Joi.number().integer().optional(),
       is_featured: Joi.boolean().optional(),
+      is_visible: Joi.boolean().optional(),
+    })
+    .min(1)
+    .unknown(false),
+};
+
+const publicQuickLinks = {
+  query: Joi.object().keys({}),
+};
+
+const adminQuickLinks = {
+  query: Joi.object().keys({
+    ...paginationQuery,
+  }),
+};
+
+const createQuickLink = {
+  body: Joi.object()
+    .keys({
+      title: Joi.string().min(2).max(300).required(),
+      url: Joi.string().max(500).allow("", null).optional(),
+      display_order: Joi.number().integer().default(0),
+      is_visible: Joi.boolean().default(true),
+    })
+    .unknown(false),
+};
+
+const updateQuickLink = {
+  ...idParam,
+  body: Joi.object()
+    .keys({
+      title: Joi.string().min(2).max(300).optional(),
+      url: Joi.string().max(500).allow("", null).optional(),
+      display_order: Joi.number().integer().optional(),
       is_visible: Joi.boolean().optional(),
     })
     .min(1)
@@ -176,7 +240,10 @@ const createContact = {
       phone: Joi.string()
         .pattern(/^0\d{9}$/)
         .required()
-        .messages({ "string.pattern.base": "Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0" }),
+        .messages({
+          "string.pattern.base":
+            "Số điện thoại phải gồm 10 chữ số và bắt đầu bằng 0",
+        }),
       email: Joi.string().email().max(200).allow("", null).optional(),
       subject: Joi.string().max(100).allow("", null).optional(),
       message: Joi.string().min(10).required(),
@@ -189,6 +256,15 @@ const adminContacts = {
     is_read: boolQuery.optional(),
     ...paginationQuery,
   }),
+};
+
+const updateContactStatus = {
+  ...idParam,
+  body: Joi.object()
+    .keys({
+      status: Joi.string().valid(...CONTACT_STATUSES).required(),
+    })
+    .unknown(false),
 };
 
 module.exports = {
@@ -205,6 +281,11 @@ module.exports = {
   adminSlides,
   createSlide,
   updateSlide,
+  publicQuickLinks,
+  adminQuickLinks,
+  createQuickLink,
+  updateQuickLink,
   createContact,
   adminContacts,
+  updateContactStatus,
 };

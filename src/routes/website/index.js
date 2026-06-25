@@ -7,6 +7,7 @@ const articleController = require("../../controllers/website-article.controller"
 const documentController = require("../../controllers/website-document.controller");
 const slideController = require("../../controllers/website-slide.controller");
 const contactController = require("../../controllers/website-contact.controller");
+const quickLinkController = require("../../controllers/website-quick-link.controller");
 const validate = require("../../middlewares/validate");
 const { authentication } = require("../../middlewares/auth.middleware");
 const { requireRole } = require("../../middlewares/role.middleware");
@@ -34,6 +35,12 @@ router.get(
   "/slides",
   validate(websiteValidation.publicSlides),
   slideController.listPublic,
+);
+
+router.get(
+  "/quick-links",
+  validate(websiteValidation.publicQuickLinks),
+  quickLinkController.listPublic,
 );
 router.post(
   "/contacts",
@@ -133,6 +140,34 @@ router.delete(
 );
 
 router.get(
+  "/admin/quick-links",
+  authentication,
+  requireRole(contentRoles),
+  validate(websiteValidation.adminQuickLinks),
+  quickLinkController.listAdmin,
+);
+router.post(
+  "/admin/quick-links",
+  authentication,
+  requireRole(contentRoles),
+  validate(websiteValidation.createQuickLink),
+  quickLinkController.create,
+);
+router.put(
+  "/admin/quick-links/:id",
+  authentication,
+  requireRole(contentRoles),
+  validate(websiteValidation.updateQuickLink),
+  quickLinkController.update,
+);
+router.delete(
+  "/admin/quick-links/:id",
+  authentication,
+  validate(websiteValidation.idParam),
+  quickLinkController.remove,
+);
+
+router.get(
   "/admin/contacts",
   authentication,
   requireRole(managerRoles),
@@ -145,6 +180,13 @@ router.patch(
   requireRole(managerRoles),
   validate(websiteValidation.idParam),
   contactController.markRead,
+);
+router.patch(
+  "/admin/contacts/:id/status",
+  authentication,
+  requireRole(managerRoles),
+  validate(websiteValidation.updateContactStatus),
+  contactController.updateStatus,
 );
 
 module.exports = router;

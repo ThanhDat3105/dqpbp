@@ -72,7 +72,9 @@ const listAdmin = async (filters) => {
 
   if (filters.keyword) {
     params.push(`%${filters.keyword}%`);
-    where.push(`(title ILIKE $${params.length} OR slug ILIKE $${params.length})`);
+    where.push(
+      `(title ILIKE $${params.length} OR slug ILIKE $${params.length})`,
+    );
   }
 
   if (filters.category) {
@@ -143,6 +145,7 @@ const update = async (id, payload) => {
     "display_order",
     "is_featured",
     "is_visible",
+    "excerpt",
   ];
 
   allowedFields.forEach((field) => {
