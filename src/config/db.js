@@ -26,6 +26,10 @@ const pool = new Pool(
       },
 );
 
+async function pingPostgres() {
+  await pool.query("SELECT 1");
+}
+
 function getSql(text) {
   return typeof text === "string" ? text.trim() : (text?.text ?? text);
 }
@@ -85,3 +89,4 @@ pool.connect = function loggableConnect(...args) {
 };
 
 module.exports = pool;
+module.exports.pingPostgres = pingPostgres;

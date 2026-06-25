@@ -3,13 +3,12 @@
 const { SuccessResponse } = require("../core/success.response");
 const knowledgeBaseService = require("../services/knowledge-base.service");
 const chatgptService = require("../services/chatgpt.service");
+const { getRelevantText } = require("../utils/ai/query");
 
 const chat = async (req, res, next) => {
   try {
     const { message } = req.body;
-    console.log(message);
-    const { content, files, sources } =
-      await knowledgeBaseService.loadKnowledgeBase();
+    const { content } = await knowledgeBaseService.loadKnowledgeBase();
 
     const result = await chatgptService.chat({
       message,
@@ -22,8 +21,6 @@ const chat = async (req, res, next) => {
         reply: result.reply,
         model: result.model,
         usage: result.usage,
-        knowledge_files: files,
-        knowledge_sources: sources,
       },
     }).send(res);
   } catch (error) {
@@ -31,6 +28,34 @@ const chat = async (req, res, next) => {
   }
 };
 
+const chatV2 = async (req, res, next) => {
+  try {
+    const { message } = req.body;
+    const { content, sources, chunkIds } = await getRelevantText(message);
+
+    console.log(content, "content");
+    console.log(sources, "sources");
+    console.log(chunkIds, "chunkIds");
+    const result = await chatgptService.chat({
+      message,
+      knowledgeContent: content,
+    });
+
+    return new SuccessResponse({
+      message: "Chat response generated",
+      metaData: {
+        reply: result.reply,
+        model: result.model,
+        usage: result.usage,
+        sources,
+        chunkIds,
+      },
+    }).send(res);
+  } catch (error) {
+    next(error);
+  }
+};
 module.exports = {
   chat,
+  chatV2,
 };
