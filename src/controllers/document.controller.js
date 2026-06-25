@@ -53,7 +53,40 @@ const upload = async (req, res, next) => {
   }
 };
 
+const update = async (req, res, next) => {
+  try {
+    const data = await documentService.updateDocument({
+      id: Number(req.params.id),
+      file: req.file,
+      payload: req.body,
+      user: req.user,
+    });
+
+    return new SuccessResponse({
+      message: "Document updated successfully",
+      metaData: data,
+    }).send(res);
+  } catch (err) {
+    return next(err);
+  }
+};
+
+const remove = async (req, res, next) => {
+  try {
+    const data = await documentService.removeDocument(Number(req.params.id));
+
+    return new SuccessResponse({
+      message: "Document deleted successfully",
+      metaData: data,
+    }).send(res);
+  } catch (err) {
+    return next(err);
+  }
+};
+
 module.exports = {
   getList,
   upload,
+  update,
+  remove,
 };
