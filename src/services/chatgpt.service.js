@@ -42,7 +42,6 @@ async function chat({ message, knowledgeContent }) {
           { role: "system", content: buildSystemPrompt(knowledgeContent) },
           { role: "user", content: message },
         ],
-        temperature: 0.3,
       },
       {
         headers: {

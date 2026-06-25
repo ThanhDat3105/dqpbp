@@ -23,7 +23,7 @@ IF NOT EXISTS idx_knowledge_chunks_source
   ON knowledge_chunks
 (source);
 
-CREATE INDEX
+CREATE INDEX 
 IF NOT EXISTS idx_knowledge_chunks_embedding
   ON knowledge_chunks
   USING hnsw
