@@ -464,8 +464,13 @@ const getTaskList = async ({
   sort = "due_date_desc",
   status = null,
   activity_id = null,
+  page = 1,
+  from = null,
+  to = null,
 }) => {
-  const clampedLimit = Math.min(limit, 50);
+  const clampedLimit = Math.min(Number(limit) || 20, 50);
+  const safePage = Math.max(Number(page) || 1, 1);
+  const offset = (safePage - 1) * clampedLimit;
 
   if (assignee !== null) {
     const userResult = await pool.query(
@@ -477,6 +482,8 @@ const getTaskList = async ({
       return {
         tasks: [],
         total: 0,
+        page: safePage,
+        limit: clampedLimit,
       };
     }
   }
@@ -499,6 +506,18 @@ const getTaskList = async ({
     conditions.push(`t.activity_id = $${params.length}`);
   }
 
+  if (from) {
+    params.push(from);
+    conditions.push(`t.due_date::date >= $${params.length}::date`);
+  }
+
+  if (to) {
+    params.push(to);
+    conditions.push(`t.due_date::date <= $${params.length}::date`);
+  }
+
+  const whereClause = conditions.join(" AND ");
+
   const sortMapping = {
     due_date_asc: "tasks.due_date ASC NULLS LAST",
     due_date_desc: "tasks.due_date DESC NULLS LAST",
@@ -506,7 +525,22 @@ const getTaskList = async ({
   };
 
   const orderBy = sortMapping[sort] || sortMapping.due_date_desc;
-  params.push(clampedLimit);
+
+  const countQuery = `
+    SELECT COUNT(*)::int AS total
+    FROM (
+      SELECT DISTINCT t.id
+      FROM activity_tasks t
+      JOIN activities a ON a.id = t.activity_id
+      JOIN task_assignees ta ON ta.task_id = t.id
+      WHERE ${whereClause}
+    ) counted
+  `;
+
+  const countResult = await pool.query(countQuery, params);
+  const total = countResult.rows[0]?.total ?? 0;
+
+  const listParams = [...params, clampedLimit, offset];
 
   const query = `
     SELECT
@@ -536,17 +570,20 @@ const getTaskList = async ({
       FROM activity_tasks t
       JOIN activities a ON a.id = t.activity_id
       JOIN task_assignees ta ON ta.task_id = t.id
-      WHERE ${conditions.join(" AND ")}
+      WHERE ${whereClause}
     ) tasks
     ORDER BY ${orderBy}
-    LIMIT $${params.length}
+    LIMIT $${listParams.length - 1}
+    OFFSET $${listParams.length}
   `;
 
-  const result = await pool.query(query, params);
+  const result = await pool.query(query, listParams);
 
   return {
     tasks: result.rows,
-    total: result.rows.length,
+    total,
+    page: safePage,
+    limit: clampedLimit,
   };
 };
 

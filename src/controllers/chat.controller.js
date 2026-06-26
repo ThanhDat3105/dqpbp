@@ -21,6 +21,8 @@ const chat = async (req, res, next) => {
         reply: result.reply,
         model: result.model,
         usage: result.usage,
+        source: result.source,
+        rounds: result.rounds,
       },
     }).send(res);
   } catch (error) {
@@ -33,12 +35,9 @@ const chatV2 = async (req, res, next) => {
     const { message } = req.body;
     const { content, sources, chunkIds } = await getRelevantText(message);
 
-    console.log(content, "content");
-    console.log(sources, "sources");
-    console.log(chunkIds, "chunkIds");
     const result = await chatgptService.chat({
       message,
-      knowledgeContent: content,
+      knowledgeContent: content || undefined,
     });
 
     return new SuccessResponse({
@@ -47,6 +46,8 @@ const chatV2 = async (req, res, next) => {
         reply: result.reply,
         model: result.model,
         usage: result.usage,
+        source: result.source,
+        rounds: result.rounds,
         sources,
         chunkIds,
       },

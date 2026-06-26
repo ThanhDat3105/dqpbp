@@ -43,7 +43,7 @@ async function getRelevantChunks(question, options = {}) {
 async function getRelevantText(question, options = {}) {
   const q = question?.trim();
   if (!q) {
-    return { content: "", sources: [], chunkIds: [], chunks: [] };
+    return { content: "", sources: [], chunkIds: [], chunks: [], topScore: 0 };
   }
 
   const topK = options.topK ?? DEFAULT_TOP_K;
@@ -56,7 +56,7 @@ async function getRelevantText(question, options = {}) {
   });
 
   if (!hits.length) {
-    return { content: "", sources: [], chunkIds: [], chunks: [] };
+    return { content: "", sources: [], chunkIds: [], chunks: [], topScore: 0 };
   }
 
   const selected = [];
@@ -74,12 +74,14 @@ async function getRelevantText(question, options = {}) {
     ...new Set(selected.map((h) => h.source || h.path).filter(Boolean)),
   ];
   const chunkIds = selected.map((h) => h.id);
+  const topScore = selected[0]?.score ?? 0;
 
   return {
     content,
     sources,
     chunkIds,
     chunks: selected,
+    topScore,
   };
 }
 

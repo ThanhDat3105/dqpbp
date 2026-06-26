@@ -1,14 +1,36 @@
 "use strict";
 
 const { CREATED, SuccessResponse } = require("../core/success.response");
+const { ForbiddenError } = require("../core/error.response");
+const captchaService = require("../services/captcha.service");
 const contactService = require("../services/website-contact.service");
+
+const getClientIp = (req) => {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.length > 0) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.ip || req.socket?.remoteAddress || null;
+};
 
 const handleServerError = (res) =>
   res.status(500).json({ message: "Lỗi server" });
 
 const create = async (req, res, next) => {
   try {
-    const contact = await contactService.create(req.body);
+    const { captcha_token, ...contactData } = req.body;
+    const clientIp = getClientIp(req);
+
+    const captchaValid = await captchaService.verifyCaptcha(
+      captcha_token,
+      clientIp,
+    );
+
+    if (!captchaValid) {
+      return next(new ForbiddenError("Captcha không hợp lệ"));
+    }
+
+    const contact = await contactService.create(contactData);
     return new CREATED({
       message: "Gửi liên hệ thành công",
       metaData: contact,

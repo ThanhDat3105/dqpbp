@@ -46,6 +46,38 @@ const normalizeRoles = (role) => {
 const hasValue = (value) =>
   value !== undefined && value !== null && value !== "";
 
+const getUserInitials = (name = "") => {
+  const words = String(name).trim().split(/\s+/).filter(Boolean);
+  const initials = words.slice(-2).map((word) => word[0]).join("");
+
+  return initials.toUpperCase();
+};
+
+const parsePositiveInteger = (value, fieldName, defaultValue, maxValue) => {
+  if (!hasValue(value)) {
+    return defaultValue;
+  }
+
+  const parsedValue = Number(value);
+
+  if (!Number.isInteger(parsedValue) || parsedValue < 1) {
+    throw new BadRequestError(`${fieldName} must be a positive integer`);
+  }
+
+  return maxValue ? Math.min(parsedValue, maxValue) : parsedValue;
+};
+
+const normalizeHotTasksFilter = (filter) => {
+  const normalizedFilter = (filter || "all").toLowerCase();
+  const validFilters = ["overdue", "warning", "all"];
+
+  if (!validFilters.includes(normalizedFilter)) {
+    throw new BadRequestError("filter must be one of: overdue, warning, all");
+  }
+
+  return normalizedFilter;
+};
+
 const parseYear = (year) => {
   if (!hasValue(year)) {
     return new Date().getFullYear();
@@ -197,8 +229,10 @@ const getKpiData = async ({
   to,
   role,
   user_id,
+  department_id,
   requesterId,
   requesterRole,
+  requesterDepartmentId,
 }) => {
   const targetRoles = normalizeRoles(role);
 
@@ -206,15 +240,25 @@ const getKpiData = async ({
   const effectiveUserId =
     requesterRole === "DQCD" ? requesterId : user_id ?? null;
 
+  // $1=targetRoles, $2=from, $3=to; additional params appended below
   const values = [targetRoles, from, to];
-  const whereClauses = [
-    "ta.role = ANY($1)",
-    "t.due_date::date BETWEEN $2::date AND $3::date",
-  ];
+  // userClauses: filter on users table (applied in outer WHERE)
+  const userClauses = ["u.role = ANY($1)"];
+  // taskClauses: filter on tasks (applied in the LEFT JOIN ON clause so users
+  // with no tasks in the period still appear with zero counts)
+  const taskClauses = ["t.due_date::date BETWEEN $2::date AND $3::date"];
 
   if (effectiveUserId) {
     values.push(effectiveUserId);
-    whereClauses.push(`ta.user_id = $${values.length}`);
+    userClauses.push(`u.id = $${values.length}`);
+  }
+
+  if (requesterRole === "TO_TRUONG" && requesterDepartmentId) {
+    values.push(requesterDepartmentId);
+    userClauses.push(`u.department_id = $${values.length}`);
+  } else if (hasValue(department_id)) {
+    values.push(department_id);
+    userClauses.push(`u.department_id = $${values.length}`);
   }
 
   const query = `
@@ -222,18 +266,23 @@ const getKpiData = async ({
       u.id AS user_id,
       u.name,
       u.role,
-      COUNT(*) FILTER (WHERE t.status != 'cancelled') AS total_assigned,
-      COUNT(*) FILTER (WHERE t.status = 'completed') AS completed,
-      COUNT(*) FILTER (
+      COUNT(t.id) FILTER (WHERE t.status != 'cancelled') AS total_assigned,
+      COUNT(t.id) FILTER (WHERE t.status = 'completed') AS completed,
+      COUNT(t.id) FILTER (
         WHERE t.status = 'completed'
         AND t.completed_at IS NOT NULL
         AND t.completed_at <= t.due_date
       ) AS on_time,
-      COUNT(*) FILTER (WHERE t.status = 'cancelled') AS cancelled
+      COUNT(t.id) FILTER (
+        WHERE t.status IN ('pending', 'in_progress')
+        AND t.due_date::date < CURRENT_DATE
+      ) AS overdue,
+      COUNT(t.id) FILTER (WHERE t.status = 'cancelled') AS cancelled
     FROM users u
-    JOIN task_assignees ta ON ta.user_id = u.id
-    JOIN activity_tasks t ON t.id = ta.task_id
-    WHERE ${whereClauses.join(" AND ")}
+    LEFT JOIN task_assignees ta ON ta.user_id = u.id
+    LEFT JOIN activity_tasks t ON t.id = ta.task_id
+      AND ${taskClauses.join(" AND ")}
+    WHERE ${userClauses.join(" AND ")}
     GROUP BY u.id, u.name, u.role
     ORDER BY completed DESC;
   `;
@@ -244,6 +293,7 @@ const getKpiData = async ({
     const totalAssigned = Number(row.total_assigned) || 0;
     const completed = Number(row.completed) || 0;
     const onTime = Number(row.on_time) || 0;
+    const overdue = Number(row.overdue) || 0;
     const cancelled = Number(row.cancelled) || 0;
 
     const completionRate =
@@ -258,6 +308,7 @@ const getKpiData = async ({
       total_assigned: totalAssigned,
       completed,
       on_time: onTime,
+      overdue,
       cancelled,
       completion_rate: completionRate,
       on_time_rate: onTimeRate,
@@ -275,8 +326,10 @@ const getKpiSummary = async ({
   year,
   role,
   user_id,
+  department_id,
   requesterId,
   requesterRole,
+  requesterDepartmentId,
 }) => {
   const targetRoles = normalizeRoles(role);
   const dateRange = resolveSummaryRange({
@@ -294,13 +347,21 @@ const getKpiSummary = async ({
 
   const values = [targetRoles, dateRange.from, dateRange.to];
   const whereClauses = [
-    "ta.role = ANY($1)",
+    "u.role = ANY($1)",
     "t.due_date::date BETWEEN $2::date AND $3::date",
   ];
 
   if (effectiveUserId) {
     values.push(effectiveUserId);
     whereClauses.push(`ta.user_id = $${values.length}`);
+  }
+
+  if (requesterRole === "TO_TRUONG" && requesterDepartmentId) {
+    values.push(requesterDepartmentId);
+    whereClauses.push(`u.department_id = $${values.length}`);
+  } else if (hasValue(department_id)) {
+    values.push(department_id);
+    whereClauses.push(`u.department_id = $${values.length}`);
   }
 
   const query = `
@@ -322,11 +383,16 @@ const getKpiSummary = async ({
       ) AS not_completed,
       COUNT(*) FILTER (
         WHERE t.status IN ('pending', 'in_progress')
+        AND t.due_date::date BETWEEN CURRENT_DATE AND CURRENT_DATE + INTERVAL '3 days'
+      ) AS warning,
+      COUNT(*) FILTER (
+        WHERE t.status IN ('pending', 'in_progress')
         AND t.due_date::date < CURRENT_DATE
       ) AS overdue,
       COUNT(*) FILTER (WHERE t.status = 'cancelled') AS cancelled
     FROM task_assignees ta
     JOIN activity_tasks t ON t.id = ta.task_id
+    JOIN users u ON u.id = ta.user_id
     WHERE ${whereClauses.join(" AND ")};
   `;
 
@@ -339,9 +405,78 @@ const getKpiSummary = async ({
     completed_on_time: Number(row.completed_on_time) || 0,
     completed_late: Number(row.completed_late) || 0,
     not_completed: Number(row.not_completed) || 0,
+    warning: Number(row.warning) || 0,
     overdue: Number(row.overdue) || 0,
     cancelled: Number(row.cancelled) || 0,
   };
+};
+
+const getKpiTrend = async ({ from, to, user_id }) => {
+  if (hasValue(user_id)) {
+    // Per-user trend: tasks assigned to this user (created = assigned, completed = completed by user)
+    const values = [from, to, user_id];
+    const query = `
+      SELECT
+        gs.week_start::date AS week_start,
+        COUNT(DISTINCT t_created.id) AS created,
+        COUNT(DISTINCT t_completed.id) AS completed
+      FROM generate_series($1::date, $2::date, '7 days'::interval) AS gs(week_start)
+      LEFT JOIN activity_tasks t_created
+        ON t_created.due_date::date >= gs.week_start
+        AND t_created.due_date::date < gs.week_start + INTERVAL '7 days'
+        AND t_created.due_date::date <= $2::date
+        AND t_created.status != 'cancelled'
+        AND EXISTS (
+          SELECT 1 FROM task_assignees ta WHERE ta.task_id = t_created.id AND ta.user_id = $3
+        )
+      LEFT JOIN activity_tasks t_completed
+        ON t_completed.completed_at::date >= gs.week_start
+        AND t_completed.completed_at::date < gs.week_start + INTERVAL '7 days'
+        AND t_completed.completed_at::date <= $2::date
+        AND t_completed.status = 'completed'
+        AND EXISTS (
+          SELECT 1 FROM task_assignees ta WHERE ta.task_id = t_completed.id AND ta.user_id = $3
+        )
+      GROUP BY gs.week_start
+      ORDER BY gs.week_start ASC;
+    `;
+    const { rows } = await db.query(query, values);
+    return rows.map((row, index) => ({
+      week_label: `Tuần ${index + 1}`,
+      week_start: String(row.week_start).slice(0, 10),
+      created: Number(row.created) || 0,
+      completed: Number(row.completed) || 0,
+    }));
+  }
+
+  const query = `
+    SELECT
+      gs.week_start::date AS week_start,
+      COUNT(DISTINCT a_created.id) AS created,
+      COUNT(DISTINCT a_completed.id) AS completed
+    FROM generate_series($1::date, $2::date, '7 days'::interval) AS gs(week_start)
+    LEFT JOIN activities a_created
+      ON a_created.created_at::date >= gs.week_start
+      AND a_created.created_at::date < gs.week_start + INTERVAL '7 days'
+      AND a_created.created_at::date <= $2::date
+      AND a_created.status != 'cancelled'
+    LEFT JOIN activities a_completed
+      ON a_completed.completed_at::date >= gs.week_start
+      AND a_completed.completed_at::date < gs.week_start + INTERVAL '7 days'
+      AND a_completed.completed_at::date <= $2::date
+      AND a_completed.status = 'completed'
+    GROUP BY gs.week_start
+    ORDER BY gs.week_start ASC;
+  `;
+
+  const { rows } = await db.query(query, [from, to]);
+
+  return rows.map((row, index) => ({
+    week_label: `Tuần ${index + 1}`,
+    week_start: String(row.week_start).slice(0, 10),
+    created: Number(row.created) || 0,
+    completed: Number(row.completed) || 0,
+  }));
 };
 
 const KPI_STATUS_CASE = `
@@ -579,6 +714,151 @@ const getKpiDepartments = async ({
   };
 };
 
+const getHotTasks = async ({
+  filter,
+  from,
+  to,
+  department_id,
+  user_id,
+  page,
+  limit,
+  maxLimit = 100,
+  requesterId,
+  requesterRole,
+  requesterDepartmentId,
+}) => {
+  const normalizedFilter = normalizeHotTasksFilter(filter);
+  const currentPage = parsePositiveInteger(page, "page", 1);
+  const currentLimit = parsePositiveInteger(limit, "limit", 20, maxLimit);
+  const offset = (currentPage - 1) * currentLimit;
+
+  const values = [];
+  const whereClauses = [
+    "t.status IN ('pending', 'in_progress')",
+    "t.due_date IS NOT NULL",
+  ];
+
+  if (normalizedFilter === "overdue") {
+    whereClauses.push("t.due_date < NOW()");
+  } else if (normalizedFilter === "warning") {
+    whereClauses.push(
+      "t.due_date BETWEEN NOW() AND NOW() + INTERVAL '3 days'",
+    );
+  } else {
+    whereClauses.push(
+      "(t.due_date < NOW() OR t.due_date BETWEEN NOW() AND NOW() + INTERVAL '3 days')",
+    );
+  }
+
+  if (hasValue(from) && hasValue(to)) {
+    values.push(from, to);
+    whereClauses.push(
+      `t.due_date::date BETWEEN $${values.length - 1}::date AND $${values.length}::date`,
+    );
+  }
+
+  if (requesterRole === "TO_TRUONG" && requesterDepartmentId) {
+    values.push(requesterDepartmentId);
+    whereClauses.push(`u.department_id = $${values.length}`);
+  } else if (hasValue(department_id)) {
+    values.push(department_id);
+    whereClauses.push(`u.department_id = $${values.length}`);
+  }
+
+  // explicit user_id override (admin viewing a specific DQTT user) takes priority
+  // over the auto-scope for DQTT/DQCD requesters
+  if (hasValue(user_id)) {
+    values.push(user_id);
+    whereClauses.push(`ta.user_id = $${values.length}`);
+  } else if (requesterRole === "DQCD" || requesterRole === "DQTT") {
+    values.push(requesterId);
+    whereClauses.push(`ta.user_id = $${values.length}`);
+  }
+
+  const scopedTasksCte = `
+    WITH scoped_tasks AS (
+      SELECT DISTINCT t.id
+      FROM activity_tasks t
+      JOIN activities a ON a.id = t.activity_id
+      JOIN task_assignees ta ON ta.task_id = t.id
+      JOIN users u ON u.id = ta.user_id
+      WHERE ${whereClauses.join(" AND ")}
+    )
+  `;
+
+  const countQuery = `
+    ${scopedTasksCte}
+    SELECT COUNT(*) AS total
+    FROM scoped_tasks;
+  `;
+
+  const dataQuery = `
+    ${scopedTasksCte}
+    SELECT
+      t.id AS task_id,
+      t.title AS task_title,
+      a.id AS activity_id,
+      a.name AS activity_name,
+      t.due_date,
+      t.status,
+      CASE
+        WHEN t.due_date < NOW() THEN 'overdue'
+        ELSE 'warning'
+      END AS urgency,
+      COALESCE(
+        json_agg(
+          DISTINCT jsonb_build_object(
+            'user_id', assignee.id,
+            'user_name', assignee.name,
+            'department_id', d.id,
+            'department_name', d.name
+          )
+        ) FILTER (WHERE assignee.id IS NOT NULL),
+        '[]'
+      ) AS assignees
+    FROM scoped_tasks scoped
+    JOIN activity_tasks t ON t.id = scoped.id
+    JOIN activities a ON a.id = t.activity_id
+    LEFT JOIN task_assignees ta_all ON ta_all.task_id = t.id
+    LEFT JOIN users assignee ON assignee.id = ta_all.user_id
+    LEFT JOIN departments d ON d.id = assignee.department_id
+    GROUP BY t.id, t.title, a.id, a.name, t.due_date, t.status
+    ORDER BY
+      CASE WHEN t.due_date < NOW() THEN 0 ELSE 1 END,
+      t.due_date ASC,
+      t.id ASC
+    LIMIT $${values.length + 1}
+    OFFSET $${values.length + 2};
+  `;
+
+  const [countResult, dataResult] = await Promise.all([
+    db.query(countQuery, values),
+    db.query(dataQuery, [...values, currentLimit, offset]),
+  ]);
+
+  return {
+    total: Number(countResult.rows[0]?.total) || 0,
+    page: currentPage,
+    limit: currentLimit,
+    data: dataResult.rows.map((row) => ({
+      task_id: row.task_id,
+      task_title: row.task_title,
+      activity_id: row.activity_id,
+      activity_name: row.activity_name,
+      due_date: row.due_date,
+      status: row.status,
+      urgency: row.urgency,
+      assignees: (row.assignees || []).map((assignee) => ({
+        user_id: assignee.user_id,
+        user_name: assignee.user_name,
+        user_initials: getUserInitials(assignee.user_name),
+        department_id: assignee.department_id,
+        department_name: assignee.department_name,
+      })),
+    })),
+  };
+};
+
 const getKpiList = async (filters = {}) => {
   const users = await userService.getAll({
     ...filters,
@@ -589,8 +869,10 @@ const getKpiList = async (filters = {}) => {
 };
 
 module.exports = {
+  getHotTasks,
   getKpiData,
   getKpiDepartments,
   getKpiList,
   getKpiSummary,
+  getKpiTrend,
 };

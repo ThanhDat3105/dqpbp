@@ -9,7 +9,14 @@ const ARTICLE_CATEGORIES = [
   "Văn bản pháp quy",
 ];
 
-const DOCUMENT_CATEGORIES = ["tsqs", "tuoi17", "tinhnguyen", "dqtt", "doituongchinhsach", "siquandubi"];
+const DOCUMENT_CATEGORIES = [
+  "tsqs",
+  "tuoi17",
+  "tinhnguyen",
+  "dqtt",
+  "doituongchinhsach",
+  "siquandubi",
+];
 const DOCUMENT_STATUSES = ["active", "expired", "new"];
 const CONTACT_STATUSES = ["pending", "approved", "rejected"];
 
@@ -237,8 +244,11 @@ const createContact = {
       email: Joi.string().email().max(200).allow("", null).optional(),
       subject: Joi.string().max(100).allow("", null).optional(),
       message: Joi.string().min(10).required(),
+      captcha_token: Joi.string().trim().required().messages({
+        "any.required": "captcha_token là bắt buộc",
+      }),
     })
-    .unknown(false),
+    .unknown(true),
 };
 
 const adminContacts = {

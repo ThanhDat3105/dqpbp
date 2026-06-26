@@ -49,7 +49,7 @@ router.get(
 );
 router.post(
   "/contacts",
-  // validate(websiteValidation.createContact),
+  validate(websiteValidation.createContact),
   contactController.create,
 );
 

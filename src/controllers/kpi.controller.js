@@ -1,5 +1,6 @@
 "use strict";
 
+const ExcelJS = require("exceljs");
 const {
   endOfISOWeek,
   endOfMonth,
@@ -17,6 +18,16 @@ const {
 const { BadRequestError, ForbiddenError } = require("../core/error.response");
 const { SuccessResponse } = require("../core/success.response");
 const kpiService = require("../services/kpi.service");
+
+const HOT_TASK_STATUS_LABELS = {
+  pending: "Chờ",
+  in_progress: "Đang làm",
+};
+
+const HOT_TASK_URGENCY_LABELS = {
+  overdue: "Quá hạn",
+  warning: "Cảnh báo",
+};
 
 const getRangeByPeriod = (period) => {
   const now = new Date();
@@ -113,6 +124,23 @@ const getISOWeekStartDate = (year, week) => {
 const hasValue = (value) =>
   value !== undefined && value !== null && value !== "";
 
+const hasRangeQuery = ({ period, from, to, week, month, quarter, year }) =>
+  [period, from, to, week, month, quarter, year].some(hasValue);
+
+const getRequesterContext = (req) => {
+  const requesterId = req.user?.id ?? req.user?.user_id;
+
+  if (!requesterId) {
+    throw new ForbiddenError("Authentication required");
+  }
+
+  return {
+    requesterId,
+    requesterRole: req.user?.role,
+    requesterDepartmentId: req.user?.department_id,
+  };
+};
+
 const parseSummaryRange = ({ period, from, to, week, month, quarter, year }) => {
   if (hasValue(from) || hasValue(to)) {
     return parseDateRange({ period, from, to });
@@ -194,10 +222,11 @@ const parseSummaryRange = ({ period, from, to, week, month, quarter, year }) => 
 
 const getKpi = async (req, res, next) => {
   try {
-    const { period, from, to, role, user_id } = req.query;
+    const { period, from, to, role, user_id, department_id, departmentId } = req.query;
 
     const requesterId = req.user?.id ?? req.user?.user_id;
     const requesterRole = req.user?.role;
+    const requesterDepartmentId = req.user?.department_id;
 
     if (!requesterId) {
       throw new ForbiddenError("Authentication required");
@@ -218,8 +247,10 @@ const getKpi = async (req, res, next) => {
       to: dateRange.to,
       role,
       user_id,
+      department_id: department_id ?? departmentId,
       requesterId,
       requesterRole,
+      requesterDepartmentId,
     });
 
     return new SuccessResponse({
@@ -280,6 +311,7 @@ const getKpiSummary = async (req, res, next) => {
       user_id,
       requesterId,
       requesterRole,
+      requesterDepartmentId: req.user?.department_id,
     });
 
     return new SuccessResponse({
@@ -340,8 +372,173 @@ const getKpiDepartments = async (req, res, next) => {
   }
 };
 
+const getKpiTrend = async (req, res, next) => {
+  try {
+    const { period, from, to, week, month, quarter, year, user_id } = req.query;
+
+    getRequesterContext(req);
+
+    const dateRange = parseSummaryRange({
+      period,
+      from,
+      to,
+      week,
+      month,
+      quarter,
+      year,
+    });
+
+    const trend = await kpiService.getKpiTrend({
+      from: dateRange.from,
+      to: dateRange.to,
+      user_id: hasValue(user_id) ? user_id : undefined,
+    });
+
+    return new SuccessResponse({
+      message: "KPI trend retrieved successfully",
+      metaData: {
+        period: dateRange,
+        trend,
+      },
+    }).send(res);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const getHotTasksDateRange = (query) => {
+  const { period, from, to, week, month, quarter, year } = query;
+
+  if (!hasRangeQuery({ period, from, to, week, month, quarter, year })) {
+    return {};
+  }
+
+  return parseSummaryRange({
+    period,
+    from,
+    to,
+    week,
+    month,
+    quarter,
+    year,
+  });
+};
+
+const getKpiHotTasks = async (req, res, next) => {
+  try {
+    const {
+      filter,
+      department_id,
+      departmentId,
+      user_id,
+      page,
+      limit,
+    } = req.query;
+    const requesterContext = getRequesterContext(req);
+    const dateRange = getHotTasksDateRange(req.query);
+
+    const hotTasks = await kpiService.getHotTasks({
+      filter,
+      from: dateRange.from,
+      to: dateRange.to,
+      department_id: department_id ?? departmentId,
+      user_id: hasValue(user_id) ? user_id : undefined,
+      page,
+      limit,
+      ...requesterContext,
+    });
+
+    return new SuccessResponse({
+      message: "Hot tasks retrieved successfully",
+      metaData: hotTasks,
+    }).send(res);
+  } catch (error) {
+    return next(error);
+  }
+};
+
+const exportKpiHotTasks = async (req, res, next) => {
+  try {
+    const { filter, department_id, departmentId } = req.query;
+    const requesterContext = getRequesterContext(req);
+    const dateRange = getHotTasksDateRange(req.query);
+
+    const hotTasks = await kpiService.getHotTasks({
+      filter,
+      from: dateRange.from,
+      to: dateRange.to,
+      department_id: department_id ?? departmentId,
+      page: 1,
+      limit: 500,
+      maxLimit: 500,
+      ...requesterContext,
+    });
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet("Điểm nóng");
+
+    worksheet.columns = [
+      { header: "STT", key: "index", width: 8 },
+      { header: "Nhiệm vụ", key: "task", width: 30 },
+      { header: "Hoạt động", key: "activity", width: 30 },
+      { header: "Người phụ trách", key: "assignees", width: 28 },
+      { header: "Tổ", key: "departments", width: 24 },
+      { header: "Hạn hoàn thành", key: "due_date", width: 22 },
+      { header: "Trạng thái", key: "status", width: 16 },
+      { header: "Mức độ", key: "urgency", width: 14 },
+    ];
+
+    worksheet.views = [{ state: "frozen", ySplit: 1 }];
+    worksheet.getRow(1).font = { bold: true };
+
+    hotTasks.data.forEach((task, index) => {
+      worksheet.addRow({
+        index: index + 1,
+        task: task.task_title,
+        activity: task.activity_name,
+        assignees: task.assignees.map((assignee) => assignee.user_name).join(", "),
+        departments: [
+          ...new Set(
+            task.assignees
+              .map((assignee) => assignee.department_name)
+              .filter(Boolean),
+          ),
+        ].join(", "),
+        due_date: task.due_date ? format(new Date(task.due_date), "yyyy-MM-dd HH:mm") : "",
+        status: HOT_TASK_STATUS_LABELS[task.status] || task.status,
+        urgency: HOT_TASK_URGENCY_LABELS[task.urgency] || task.urgency,
+      });
+    });
+
+    worksheet.columns.forEach((column) => {
+      let maxLength = String(column.header || "").length;
+
+      column.eachCell({ includeEmpty: true }, (cell) => {
+        maxLength = Math.max(maxLength, String(cell.value || "").length);
+      });
+
+      column.width = Math.min(Math.max(maxLength + 2, column.width || 10), 50);
+    });
+
+    const filename = `diem-nong-${format(new Date(), "yyyyMMdd")}.xlsx`;
+
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+
+    return workbook.xlsx.write(res).then(() => res.end());
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
+  exportKpiHotTasks,
   getKpi,
   getKpiDepartments,
+  getKpiHotTasks,
   getKpiSummary,
+  getKpiTrend,
 };
