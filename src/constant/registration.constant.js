@@ -1,6 +1,6 @@
 "use strict";
 
-const REGISTRATION_CATEGORIES = ["tsqs", "tuoi17", "tinhnguyen", "dqtt"];
+const REGISTRATION_CATEGORIES = ["tsqs", "tuoi17", "tinhnguyen", "dqtt", "doituongchinhsach", "siquandubi"];
 
 const REGISTRATION_STATUS = {
   PENDING: "pending",
