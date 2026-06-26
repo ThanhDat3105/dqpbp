@@ -9,7 +9,7 @@ const ARTICLE_CATEGORIES = [
   "Văn bản pháp quy",
 ];
 
-const DOCUMENT_CATEGORIES = ["tsqs", "tuoi17", "tinhnguyen", "dqtt"];
+const DOCUMENT_CATEGORIES = ["tsqs", "tuoi17", "tinhnguyen", "dqtt", "doituongchinhsach", "siquandubi"];
 const DOCUMENT_STATUSES = ["active", "expired", "new"];
 const CONTACT_STATUSES = ["pending", "approved", "rejected"];
 

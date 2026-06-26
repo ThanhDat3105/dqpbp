@@ -55,6 +55,13 @@ const listPublic = async (filters) => {
     where.push(`is_featured = $${params.length}`);
   }
 
+  if (filters.keyword) {
+    params.push(`%${filters.keyword}%`);
+    where.push(
+      `(title ILIKE $${params.length} OR slug ILIKE $${params.length})`,
+    );
+  }
+
   params.push(limit, offset);
 
   const { rows } = await db.query(
