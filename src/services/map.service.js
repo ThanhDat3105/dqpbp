@@ -30,6 +30,10 @@ const formatPerson = (row) => ({
   address: row.address ?? null,
   permanent_address: row.permanent_address ?? null,
   temporary_address: row.temporary_address ?? null,
+  permanent_address_lat: toNumberOrNull(row.permanent_address_lat),
+  permanent_address_lng: toNumberOrNull(row.permanent_address_lng),
+  temporary_address_lat: toNumberOrNull(row.temporary_address_lat),
+  temporary_address_lng: toNumberOrNull(row.temporary_address_lng),
   enlistment_date: toIsoDate(row.enlistment_date),
   service_start_date: toIsoDate(row.service_start_date),
   date_of_birth: toIsoDate(row.date_of_birth),
@@ -108,6 +112,10 @@ const fetchTuoi17 = async (neighborhoodFilter) => {
        neighborhood,
        permanent_address,
        temporary_address,
+       permanent_address_lat,
+       permanent_address_lng,
+       temporary_address_lat,
+       temporary_address_lng,
        date_of_birth
      FROM youth_personnel
      WHERE TRUE
@@ -135,6 +143,10 @@ const fetchQndb = async (neighborhoodFilter) => {
        neighborhood,
        permanent_address,
        temporary_address,
+       permanent_address_lat,
+       permanent_address_lng,
+       temporary_address_lat,
+       temporary_address_lng,
        service_start_date,
        date_of_birth
      FROM quan_nhan_du_bi

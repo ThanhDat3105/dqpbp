@@ -1,7 +1,7 @@
 "use strict";
 
 const Joi = require("joi");
-const { optionalText } = require("./helpers");
+const { optionalText, optionalAddressCoords } = require("./helpers");
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,6 +55,7 @@ const create = {
       }),
     permanent_address: Joi.string().max(255).optional().allow("", null),
     temporary_address: Joi.string().max(255).optional().allow("", null),
+    ...optionalAddressCoords,
     neighborhood: optionalText(100),
     // Business Rule #3: phone 10 số, bắt đầu 0
     phone: Joi.string()
@@ -86,6 +87,7 @@ const update = {
       }),
       permanent_address: Joi.string().max(255).optional().allow("", null),
       temporary_address: Joi.string().max(255).optional().allow("", null),
+      ...optionalAddressCoords,
       neighborhood: optionalText(100),
       phone: Joi.string()
         .pattern(/^0\d{9}$/)

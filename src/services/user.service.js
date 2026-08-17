@@ -1,7 +1,36 @@
 "use strict";
 
-const db = require("../config/db");
 const bcrypt = require("bcrypt");
+const db = require("../config/db");
+const getPrismaClient = require("../config/prisma");
+
+const notFoundError = (id) => {
+  const err = new Error(`Không tìm thấy người dùng với id ${id}`);
+  err.status = 404;
+  return err;
+};
+
+const toUserRow = (user) => ({
+  id: user.id,
+  name: user.name,
+  department_id: user.departmentId,
+  address: user.address,
+  neighborhood: user.neighborhood,
+  lat: user.lat,
+  lng: user.lng,
+  enlistment_date: user.enlistmentDate,
+  phone: user.phone,
+  email: user.email,
+  role: user.role,
+  unit_code: user.unitCode,
+  managed_units: user.managedUnits,
+  military_rank: user.militaryRank,
+  date_of_birth: user.dateOfBirth,
+  is_active: user.isActive,
+  last_login_at: user.lastLoginAt,
+  created_at: user.createdAt,
+  updated_at: user.updatedAt,
+});
 
 const SAFE_COLUMNS = `
   id, name, department_id, address, neighborhood, lat, lng, enlistment_date,
@@ -116,18 +145,17 @@ const getAll = async (params = {}) => {
 
 // ─── 2. Get user by ID ───────────────────────────────────────────────────────
 const getById = async (id) => {
-  const { rows } = await db.query(
-    `SELECT ${SAFE_COLUMNS} FROM users WHERE id = $1 LIMIT 1`,
-    [id],
-  );
+  const prisma = getPrismaClient();
+  const user = await prisma.user.findUnique({
+    where: { id },
+    omit: { passwordHash: true },
+  });
 
-  if (rows.length === 0) {
-    const err = new Error(`Không tìm thấy người dùng với id ${id}`);
-    err.status = 404;
-    throw err;
+  if (!user) {
+    throw notFoundError(id);
   }
 
-  return rows[0];
+  return toUserRow(user);
 };
 
 // ─── 3. Create user ──────────────────────────────────────────────────────────
@@ -148,130 +176,139 @@ const create = async (data) => {
     managed_units,
   } = data;
 
-  // Check duplicate email
-  const { rows: existing } = await db.query(
-    `SELECT id FROM users WHERE email = $1 LIMIT 1`,
-    [email],
-  );
-  if (existing.length > 0) {
+  const prisma = getPrismaClient();
+
+  const existing = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true },
+  });
+  if (existing) {
     const err = new Error("Email đã tồn tại");
     err.status = 409;
     throw err;
   }
 
-  const password_hash = await bcrypt.hash(password, 10);
+  const passwordHash = await bcrypt.hash(password, 10);
 
-  const { rows } = await db.query(
-    `INSERT INTO users
-       (name, email, password_hash, department_id, address, neighborhood, lat, lng, phone, cccd, role, unit_code, managed_units)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-     RETURNING ${SAFE_COLUMNS}`,
-    [
-      name,
-      email,
-      password_hash,
-      department ?? null,
-      address ?? null,
-      neighborhood ?? null,
-      lat ?? null,
-      lng ?? null,
-      phone ?? null,
-      cccd ?? null,
-      role ?? "dqtt",
-      unit_code ?? null,
-      managed_units ?? null,
-    ],
-  );
+  const user = await prisma.$transaction(async (tx) => {
+    const newUser = await tx.user.create({
+      data: {
+        name,
+        email,
+        passwordHash,
+        departmentId: department ?? null,
+        address: address ?? null,
+        neighborhood: neighborhood ?? null,
+        lat: lat ?? null,
+        lng: lng ?? null,
+        phone: phone ?? null,
+        cccd: cccd ?? null,
+        role: role ?? "dqtt",
+        unitCode: unit_code ?? null,
+        managedUnits: managed_units ?? [],
+      },
+      omit: { passwordHash: true },
+    });
 
-  return rows[0];
+    return newUser;
+  });
+
+  return toUserRow(user);
 };
 
 // ─── 4. Update user ──────────────────────────────────────────────────────────
 // Only updates provided fields. email and password_hash are NOT updatable here.
-const UPDATABLE_FIELDS = [
-  "name",
-  "department_id",
-  "address",
-  "neighborhood",
-  "lat",
-  "lng",
-  "phone",
-  "cccd",
-  "role",
-  "unit_code",
-  "managed_units",
-  "is_active",
-];
+const UPDATABLE_FIELD_MAP = {
+  name: "name",
+  department_id: "departmentId",
+  address: "address",
+  neighborhood: "neighborhood",
+  lat: "lat",
+  lng: "lng",
+  phone: "phone",
+  cccd: "cccd",
+  role: "role",
+  unit_code: "unitCode",
+  managed_units: "managedUnits",
+  is_active: "isActive",
+};
 
 const update = async (id, data) => {
-  // Ensure user exists
-  await getById(id);
-
   if (data.department !== undefined) {
     data.department_id = data.department;
   }
 
-  const setClauses = [];
-  const values = [];
-  let idx = 1;
-
-  for (const field of UPDATABLE_FIELDS) {
-    if (data[field] !== undefined) {
-      setClauses.push(`${field} = $${idx++}`);
-      values.push(data[field]);
+  const prismaData = {};
+  for (const [inputField, prismaField] of Object.entries(UPDATABLE_FIELD_MAP)) {
+    if (data[inputField] !== undefined) {
+      prismaData[prismaField] = data[inputField];
     }
   }
 
-  if (setClauses.length === 0) {
+  if (Object.keys(prismaData).length === 0) {
     const err = new Error("Không có trường nào được cung cấp để cập nhật");
     err.status = 400;
     throw err;
   }
 
-  setClauses.push(`updated_at = NOW()`);
-  values.push(id);
+  const prisma = getPrismaClient();
 
-  const { rows } = await db.query(
-    `UPDATE users SET ${setClauses.join(", ")} WHERE id = $${idx} RETURNING ${SAFE_COLUMNS}`,
-    values,
-  );
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!existing) {
+    throw notFoundError(id);
+  }
 
-  return rows[0];
+  const user = await prisma.user.update({
+    where: { id },
+    data: prismaData,
+    omit: { passwordHash: true },
+  });
+
+  return toUserRow(user);
 };
 
 // ─── 5. Toggle is_active ─────────────────────────────────────────────────────
 const toggleActive = async (id) => {
-  const { rows } = await db.query(
-    `UPDATE users
-     SET is_active = NOT is_active, updated_at = NOW()
-     WHERE id = $1
-     RETURNING id, name, is_active`,
-    [id],
-  );
+  const prisma = getPrismaClient();
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true, name: true, isActive: true },
+  });
 
-  if (rows.length === 0) {
-    const err = new Error(`Không tìm thấy người dùng với id ${id}`);
-    err.status = 404;
-    throw err;
+  if (!existing) {
+    throw notFoundError(id);
   }
 
-  return rows[0];
+  const user = await prisma.user.update({
+    where: { id },
+    data: { isActive: !existing.isActive },
+    select: { id: true, name: true, isActive: true },
+  });
+
+  return { id: user.id, name: user.name, is_active: user.isActive };
 };
 
 // ─── 6. Delete user ──────────────────────────────────────────────────────────
 const remove = async (id) => {
-  const { rows } = await db.query(
-    `DELETE FROM users WHERE id = $1 RETURNING id`,
-    [id],
-  );
+  const prisma = getPrismaClient();
 
-  if (rows.length === 0) {
-    const err = new Error(`Không tìm thấy người dùng với id ${id}`);
-    err.status = 404;
-    throw err;
+  const existing = await prisma.user.findUnique({
+    where: { id },
+    select: { id: true },
+  });
+  if (!existing) {
+    throw notFoundError(id);
   }
 
-  return { success: true, deleted_id: rows[0].id };
+  const deleted = await prisma.user.delete({
+    where: { id },
+    select: { id: true },
+  });
+
+  return { success: true, deleted_id: deleted.id };
 };
 
 // ─── 7. Get Available Users ──────────────────────────────────────────────────

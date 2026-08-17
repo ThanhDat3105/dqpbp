@@ -181,7 +181,10 @@ const fetchList = async (filters) => {
   const { rows } = await db.query(
     `SELECT
        id, full_name, date_of_birth, neighborhood,
-       permanent_address, phone, education_level, is_registered
+       permanent_address, temporary_address,
+       permanent_address_lat, permanent_address_lng,
+       temporary_address_lat, temporary_address_lng,
+       phone, education_level, is_registered
      FROM youth_personnel
      WHERE
        ($1::text IS NULL OR full_name ILIKE '%' || $1 || '%')
@@ -207,6 +210,11 @@ const fetchList = async (filters) => {
       date_of_birth: r.date_of_birth,
       neighborhood: r.neighborhood,
       permanent_address: r.permanent_address,
+      temporary_address: r.temporary_address,
+      permanent_address_lat: r.permanent_address_lat,
+      permanent_address_lng: r.permanent_address_lng,
+      temporary_address_lat: r.temporary_address_lat,
+      temporary_address_lng: r.temporary_address_lng,
       phone: r.phone,
       education_level: r.education_level,
       is_registered: r.is_registered,
@@ -237,14 +245,20 @@ const createYouth = async (payload) => {
     neighborhood = null,
     permanent_address = null,
     temporary_address = null,
+    permanent_address_lat = null,
+    permanent_address_lng = null,
+    temporary_address_lat = null,
+    temporary_address_lng = null,
     phone = null,
     education_level = null,
     is_registered = false,
   } = payload;
   const { rows } = await db.query(
     `INSERT INTO youth_personnel
-         (full_name, date_of_birth, neighborhood, permanent_address, temporary_address, phone, education_level, is_registered)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         (full_name, date_of_birth, neighborhood, permanent_address, temporary_address,
+          permanent_address_lat, permanent_address_lng, temporary_address_lat, temporary_address_lng,
+          phone, education_level, is_registered)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
        RETURNING *`,
     [
       full_name,
@@ -252,6 +266,10 @@ const createYouth = async (payload) => {
       neighborhood,
       permanent_address,
       temporary_address,
+      permanent_address_lat,
+      permanent_address_lng,
+      temporary_address_lat,
+      temporary_address_lng,
       phone,
       education_level,
       is_registered,
@@ -393,6 +411,10 @@ const updateYouth = async (id, payload) => {
     neighborhood = null,
     permanent_address = null,
     temporary_address = null,
+    permanent_address_lat = null,
+    permanent_address_lng = null,
+    temporary_address_lat = null,
+    temporary_address_lng = null,
     phone = null,
     education_level = null,
     is_registered = null,
@@ -401,16 +423,20 @@ const updateYouth = async (id, payload) => {
   const { rows } = await db.query(
     `UPDATE youth_personnel
      SET
-       full_name         = COALESCE($1, full_name),
-       date_of_birth     = COALESCE($2, date_of_birth),
-       neighborhood      = COALESCE($3, neighborhood),
-       permanent_address = COALESCE($4, permanent_address),
-       temporary_address = COALESCE($5, temporary_address),
-       phone             = COALESCE($6, phone),
-       education_level   = COALESCE($7, education_level),
-       is_registered     = COALESCE($8, is_registered),
-       updated_at        = NOW()
-     WHERE id = $9
+       full_name              = COALESCE($1, full_name),
+       date_of_birth          = COALESCE($2, date_of_birth),
+       neighborhood           = COALESCE($3, neighborhood),
+       permanent_address      = COALESCE($4, permanent_address),
+       temporary_address      = COALESCE($5, temporary_address),
+       permanent_address_lat  = COALESCE($6, permanent_address_lat),
+       permanent_address_lng  = COALESCE($7, permanent_address_lng),
+       temporary_address_lat  = COALESCE($8, temporary_address_lat),
+       temporary_address_lng  = COALESCE($9, temporary_address_lng),
+       phone                  = COALESCE($10, phone),
+       education_level        = COALESCE($11, education_level),
+       is_registered          = COALESCE($12, is_registered),
+       updated_at             = NOW()
+     WHERE id = $13
      RETURNING *`,
     [
       full_name,
@@ -418,6 +444,10 @@ const updateYouth = async (id, payload) => {
       neighborhood,
       permanent_address,
       temporary_address,
+      permanent_address_lat,
+      permanent_address_lng,
+      temporary_address_lat,
+      temporary_address_lng,
       phone,
       education_level,
       is_registered,

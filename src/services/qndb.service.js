@@ -91,7 +91,10 @@ const fetchList = async (filters) => {
   const { rows } = await db.query(
     `SELECT
        id, full_name, date_of_birth, neighborhood,
-       permanent_address, phone, education_level,
+       permanent_address, temporary_address,
+       permanent_address_lat, permanent_address_lng,
+       temporary_address_lat, temporary_address_lng,
+       phone, education_level,
        military_rank, unit, service_start_date,
        service_end_date, reserve_class, note
      FROM quan_nhan_du_bi
@@ -138,6 +141,10 @@ const createQndb = async (payload) => {
     neighborhood = null,
     permanent_address = null,
     temporary_address = null,
+    permanent_address_lat = null,
+    permanent_address_lng = null,
+    temporary_address_lat = null,
+    temporary_address_lng = null,
     phone = null,
     education_level = null,
     military_rank = null,
@@ -151,9 +158,10 @@ const createQndb = async (payload) => {
   const { rows } = await db.query(
     `INSERT INTO quan_nhan_du_bi
        (full_name, date_of_birth, neighborhood, permanent_address, temporary_address,
+        permanent_address_lat, permanent_address_lng, temporary_address_lat, temporary_address_lng,
         phone, education_level, military_rank, unit,
         service_start_date, service_end_date, reserve_class, note)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
      RETURNING *`,
     [
       full_name,
@@ -161,6 +169,10 @@ const createQndb = async (payload) => {
       neighborhood,
       permanent_address,
       temporary_address,
+      permanent_address_lat,
+      permanent_address_lng,
+      temporary_address_lat,
+      temporary_address_lng,
       phone,
       education_level,
       military_rank,
@@ -360,6 +372,10 @@ const updateQndb = async (id, payload) => {
     neighborhood = null,
     permanent_address = null,
     temporary_address = null,
+    permanent_address_lat = null,
+    permanent_address_lng = null,
+    temporary_address_lat = null,
+    temporary_address_lng = null,
     phone = null,
     education_level = null,
     military_rank = null,
@@ -373,21 +389,25 @@ const updateQndb = async (id, payload) => {
   const { rows } = await db.query(
     `UPDATE quan_nhan_du_bi
      SET
-       full_name          = COALESCE($1,  full_name),
-       date_of_birth      = COALESCE($2,  date_of_birth),
-       neighborhood       = COALESCE($3,  neighborhood),
-       permanent_address  = COALESCE($4,  permanent_address),
-       temporary_address  = COALESCE($5,  temporary_address),
-       phone              = COALESCE($6,  phone),
-       education_level    = COALESCE($7,  education_level),
-       military_rank      = COALESCE($8,  military_rank),
-       unit               = COALESCE($9,  unit),
-       service_start_date = COALESCE($10, service_start_date),
-       service_end_date   = COALESCE($11, service_end_date),
-       reserve_class      = COALESCE($12, reserve_class),
-       note               = COALESCE($13, note),
-       updated_at         = NOW()
-     WHERE id = $14
+       full_name              = COALESCE($1,  full_name),
+       date_of_birth          = COALESCE($2,  date_of_birth),
+       neighborhood           = COALESCE($3,  neighborhood),
+       permanent_address      = COALESCE($4,  permanent_address),
+       temporary_address      = COALESCE($5,  temporary_address),
+       permanent_address_lat  = COALESCE($6,  permanent_address_lat),
+       permanent_address_lng  = COALESCE($7,  permanent_address_lng),
+       temporary_address_lat  = COALESCE($8,  temporary_address_lat),
+       temporary_address_lng  = COALESCE($9,  temporary_address_lng),
+       phone                  = COALESCE($10, phone),
+       education_level        = COALESCE($11, education_level),
+       military_rank          = COALESCE($12, military_rank),
+       unit                   = COALESCE($13, unit),
+       service_start_date     = COALESCE($14, service_start_date),
+       service_end_date       = COALESCE($15, service_end_date),
+       reserve_class          = COALESCE($16, reserve_class),
+       note                   = COALESCE($17, note),
+       updated_at             = NOW()
+     WHERE id = $18
      RETURNING *`,
     [
       full_name,
@@ -395,6 +415,10 @@ const updateQndb = async (id, payload) => {
       neighborhood,
       permanent_address,
       temporary_address,
+      permanent_address_lat,
+      permanent_address_lng,
+      temporary_address_lat,
+      temporary_address_lng,
       phone,
       education_level,
       military_rank,

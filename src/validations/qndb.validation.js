@@ -1,7 +1,7 @@
 "use strict";
 
 const Joi = require("joi");
-const { optionalText } = require("./helpers");
+const { optionalText, optionalAddressCoords } = require("./helpers");
 
 const VALID_EDUCATION = [
   "THCS",
@@ -38,6 +38,7 @@ const create = {
     }),
     permanent_address: Joi.string().max(255).optional().allow("", null),
     temporary_address: Joi.string().max(255).optional().allow("", null),
+    ...optionalAddressCoords,
     neighborhood: optionalText(100),
     phone: Joi.string()
       .pattern(/^0\d{9}$/)
@@ -72,6 +73,7 @@ const update = {
       date_of_birth: Joi.date().optional(),
       permanent_address: Joi.string().max(255).optional().allow("", null),
       temporary_address: Joi.string().max(255).optional().allow("", null),
+      ...optionalAddressCoords,
       neighborhood: optionalText(100),
       phone: Joi.string()
         .pattern(/^0\d{9}$/)
