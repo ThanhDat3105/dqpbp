@@ -1,0 +1,39 @@
+{
+  "name": "dqpbp-prisma",
+  "version": "1.0.0",
+  "description": "DQPBP Database Schema & Client",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "prebuild": "rimraf dist && npx prisma generate",
+    "build": "tsc && shx cp -r src/generated dist/generated",
+    "clean": "rimraf dist",
+    "type-check": "tsc --noEmit",
+    "db:generate": "npx prisma generate",
+    "db:push": "npx prisma db push",
+    "db:migrate": "npx prisma migrate dev",
+    "db:seed": "ts-node prisma/seed.ts",
+    "db:studio": "npx prisma studio",
+    "seed": "ts-node --project tsconfig.json prisma/seed.ts"
+  },
+  "prisma": {
+    "seed": "ts-node --project tsconfig.json prisma/seed.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "dependencies": {
+    "@prisma/client": "^7.8.0",
+    "dotenv": "^17.3.1"
+  },
+  "devDependencies": {
+    "prisma": "^7.8.0",
+    "rimraf": "^6.1.3",
+    "shx": "^0.4.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^7.0.2"
+  }
+}

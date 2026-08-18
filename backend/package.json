@@ -6,7 +6,16 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "pdf:to-md": "node tool/pdf_to_markdown.js"
+    "pdf:to-md": "node tool/pdf_to_markdown.js",
+    "prisma:build": "npm --prefix ../dqpbp-prisma run build",
+    "prisma:generate": "npm --prefix ../dqpbp-prisma run db:generate",
+    "prisma:migrate": "npm --prefix ../dqpbp-prisma run db:migrate",
+    "prisma:push": "npm --prefix ../dqpbp-prisma run db:push",
+    "prisma:seed": "npm --prefix ../dqpbp-prisma run db:seed",
+    "prisma:studio": "npm --prefix ../dqpbp-prisma run db:studio"
+  },
+  "engines": {
+    "node": ">=20.19.0"
   },
   "keywords": [],
   "author": "",

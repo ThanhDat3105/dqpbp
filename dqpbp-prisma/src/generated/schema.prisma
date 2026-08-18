@@ -1,0 +1,515 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Core / Auth ─────────────────────────────────────────────────────────────
+
+model Department {
+  id        Int      @id @default(autoincrement())
+  code      String   @db.VarChar(50)
+  name      String   @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  users     User[]
+  documents Document[]
+
+  @@map("departments")
+}
+
+model User {
+  id             Int       @id @default(autoincrement())
+  name           String    @db.VarChar(255)
+  email          String    @unique @db.VarChar(255)
+  passwordHash   String    @map("password_hash") @db.VarChar(255)
+  role           String    @db.VarChar(50)
+  departmentId   Int?      @map("department_id")
+  address        String?   @db.VarChar(500)
+  neighborhood   String?
+  lat            Float?
+  lng            Float?
+  phone          String?   @db.VarChar(20)
+  cccd           String?   @db.VarChar(20)
+  unitCode       String?   @map("unit_code") @db.VarChar(50)
+  managedUnits   String[]  @default([]) @map("managed_units")
+  militaryRank   String?   @map("military_rank") @db.VarChar(50)
+  position       String?   @db.VarChar(100)
+  dateOfBirth    DateTime? @map("date_of_birth") @db.Date
+  enlistmentDate DateTime? @map("enlistment_date") @db.Date
+  isActive       Boolean   @default(true) @map("is_active")
+  lastLoginAt    DateTime? @map("last_login_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @map("updated_at")
+
+  department            Department?            @relation(fields: [departmentId], references: [id])
+  tokens                Token[]
+  taskAssignees         TaskAssignee[]
+  dailyTaskDigests      DailyTaskDigest[]
+  documents             Document[]
+  notifications         Notification[]
+  userScheduleTemplates UserScheduleTemplate[]
+  dqcdMobilizeSummaries DqcdMobilizeSummary[]
+
+  websiteArticlesCreated   WebsiteArticle[]   @relation("WebsiteArticleCreatedBy")
+  websiteDocumentsCreated  WebsiteDocument[]  @relation("WebsiteDocumentCreatedBy")
+  websiteSlidesCreated     WebsiteSlide[]     @relation("WebsiteSlideCreatedBy")
+  websiteQuickLinksCreated WebsiteQuickLink[] @relation("WebsiteQuickLinkCreatedBy")
+  activityTemplatesCreated ActivityTemplate[] @relation("ActivityTemplateCreatedBy")
+
+  @@index([email], map: "idx_users_email")
+  @@map("users")
+}
+
+model Token {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  tokenHash String   @unique @map("token_hash")
+  type      String   @db.VarChar(20)
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  expiresAt DateTime @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type], map: "idx_tokens_user_type")
+  @@map("tokens")
+}
+
+// ─── Activities / Tasks ──────────────────────────────────────────────────────
+
+model Activity {
+  id             Int      @id @default(autoincrement())
+  name           String   @db.VarChar(255)
+  workType       String?  @map("work_type") @db.VarChar(100)
+  department     String?  @db.VarChar(255)
+  startDate      DateTime @map("start_date")
+  endDate        DateTime @map("end_date")
+  location       String?  @db.VarChar(255)
+  documentNumber String?  @map("document_number") @db.VarChar(100)
+  attachedFiles  Json?    @map("attached_files")
+  status         String   @default("pending") @db.VarChar(50)
+  createdBy      String?  @map("created_by") @db.VarChar(50)
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  tasks ActivityTask[]
+
+  @@map("activities")
+}
+
+model ActivityTask {
+  id                 Int       @id @default(autoincrement())
+  activityId         Int?      @map("activity_id")
+  title              String?   @db.VarChar(255)
+  team               String[]
+  dueDate            DateTime? @map("due_date")
+  startDate          DateTime? @map("start_date")
+  endDate            DateTime? @map("end_date")
+  reportFields       Json?     @map("report_fields")
+  notes              String?
+  completed          Boolean?
+  completedAt        DateTime? @map("completed_at")
+  status             String?   @db.VarChar(50)
+  acceptedAt         DateTime? @map("accepted_at")
+  requiresDqcd       Boolean   @default(false) @map("requires_dqcd")
+  dqcdUnit           String?   @map("dqcd_unit")
+  requireMediaReport Boolean   @default(false) @map("require_media_report")
+  mediaFiles         Json      @default("[]") @map("media_files")
+  reminded6h         Boolean   @default(false) @map("reminded_6h")
+  reminded1h         Boolean   @default(false) @map("reminded_1h")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @default(now()) @map("updated_at")
+
+  activity  Activity?      @relation(fields: [activityId], references: [id])
+  assignees TaskAssignee[]
+
+  @@index([dueDate], map: "idx_tasks_due_date")
+  @@index([team], map: "idx_tasks_team")
+  @@index([activityId], map: "idx_tasks_activity_id")
+  @@map("activity_tasks")
+}
+
+model TaskAssignee {
+  id     Int    @id @default(autoincrement())
+  taskId Int    @map("task_id")
+  userId Int    @map("user_id")
+  role   String @db.VarChar(20)
+
+  task ActivityTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, userId], map: "task_assignees_task_user_unique")
+  @@map("task_assignees")
+}
+
+model ActivityTemplate {
+  id             Int      @id @default(autoincrement())
+  name           String   @db.VarChar(255)
+  description    String?
+  workType       String?  @map("work_type") @db.VarChar(100)
+  department     String?  @db.VarChar(255)
+  location       String?  @db.VarChar(255)
+  documentNumber String?  @map("document_number") @db.VarChar(100)
+  status         String   @default("active") @db.VarChar(50)
+  createdBy      Int?     @map("created_by")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+
+  creator User?                  @relation("ActivityTemplateCreatedBy", fields: [createdBy], references: [id])
+  tasks   ActivityTemplateTask[]
+
+  @@index([status, createdAt(sort: Desc)], map: "idx_activity_templates_status_created_at")
+  @@index([workType, department], map: "idx_activity_templates_work_department")
+  @@map("activity_templates")
+}
+
+model ActivityTemplateTask {
+  id                 Int      @id @default(autoincrement())
+  templateId         Int      @map("template_id")
+  title              String   @db.VarChar(255)
+  team               String[] @default([])
+  assignees          Int[]    @default([])
+  notes              String?
+  reportFields       Json     @default("[]") @map("report_fields")
+  requiresDqcd       Boolean  @default(false) @map("requires_dqcd")
+  requireMediaReport Boolean  @default(false) @map("require_media_report")
+  displayOrder       Int      @default(0) @map("display_order")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @default(now()) @map("updated_at")
+
+  template ActivityTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId, displayOrder, id], map: "idx_activity_template_tasks_template_order")
+  @@map("activity_template_tasks")
+}
+
+// ─── Notifications / Digests ─────────────────────────────────────────────────
+
+model DailyTaskDigest {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  digestDate  DateTime @map("digest_date") @db.Date
+  tasks       Json     @default("[]")
+  unreadCount Int      @default(0) @map("unread_count")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @default(now()) @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, digestDate], map: "unique_user_digest_date")
+  @@index([userId, digestDate], map: "idx_daily_digest_user_date")
+  @@map("daily_task_digests")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  type      String   @db.VarChar(50)
+  title     String   @db.VarChar(255)
+  body      String?
+  metadata  Json?
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @default(now()) @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+// ─── Documents ───────────────────────────────────────────────────────────────
+
+model Document {
+  id           Int      @id @default(autoincrement())
+  title        String   @db.VarChar(255)
+  description  String?
+  fileUrl      String   @map("file_url")
+  fileName     String   @map("file_name") @db.VarChar(255)
+  isPublic     Boolean  @default(false) @map("is_public")
+  uploadedBy   Int      @map("uploaded_by")
+  departmentId Int      @map("department_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  uploader   User       @relation(fields: [uploadedBy], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+
+  @@map("documents")
+}
+
+// ─── Personnel (Tuổi 17 / Nguồn / QNDB) ─────────────────────────────────────
+
+model YouthPersonnel {
+  id                  Int      @id @default(autoincrement())
+  fullName            String   @map("full_name") @db.VarChar(100)
+  dateOfBirth         DateTime @map("date_of_birth") @db.Date
+  neighborhood        String?
+  permanentAddress    String?  @map("permanent_address") @db.VarChar(255)
+  temporaryAddress    String?  @map("temporary_address") @db.VarChar(255)
+  permanentAddressLat Float?   @map("permanent_address_lat")
+  permanentAddressLng Float?   @map("permanent_address_lng")
+  temporaryAddressLat Float?   @map("temporary_address_lat")
+  temporaryAddressLng Float?   @map("temporary_address_lng")
+  phone               String?  @db.VarChar(15)
+  educationLevel      String?  @map("education_level") @db.VarChar(50)
+  isRegistered        Boolean  @default(false) @map("is_registered")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @default(now()) @map("updated_at")
+
+  @@index([fullName], map: "idx_youth_personnel_full_name")
+  @@index([isRegistered], map: "idx_youth_personnel_is_registered")
+  @@map("youth_personnel")
+}
+
+model Nguon {
+  id               Int      @id @default(autoincrement())
+  fullName         String   @map("full_name") @db.VarChar(100)
+  dateOfBirth      DateTime @map("date_of_birth") @db.Date
+  permanentAddress String?  @map("permanent_address") @db.VarChar(255)
+  temporaryAddress String?  @map("temporary_address") @db.VarChar(255)
+  phone            String?  @db.VarChar(15)
+  educationLevel   String?  @map("education_level") @db.VarChar(50)
+  youthPersonnelId Int?     @map("youth_personnel_id")
+  note             String?
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @map("updated_at")
+
+  @@index([fullName], map: "idx_nguon_full_name")
+  @@index([youthPersonnelId], map: "idx_nguon_youth_personnel_id")
+  @@map("nguon")
+}
+
+model QuanNhanDuBi {
+  id                  Int       @id @default(autoincrement())
+  fullName            String    @map("full_name") @db.VarChar(100)
+  dateOfBirth         DateTime  @map("date_of_birth") @db.Date
+  neighborhood        String?
+  permanentAddress    String?   @map("permanent_address") @db.VarChar(255)
+  temporaryAddress    String?   @map("temporary_address") @db.VarChar(255)
+  permanentAddressLat Float?    @map("permanent_address_lat")
+  permanentAddressLng Float?    @map("permanent_address_lng")
+  temporaryAddressLat Float?    @map("temporary_address_lat")
+  temporaryAddressLng Float?    @map("temporary_address_lng")
+  phone               String?   @db.VarChar(15)
+  educationLevel      String?   @map("education_level") @db.VarChar(50)
+  militaryRank        String?   @map("military_rank") @db.VarChar(50)
+  unit                String?   @db.VarChar(100)
+  serviceStartDate    DateTime? @map("service_start_date") @db.Date
+  serviceEndDate      DateTime? @map("service_end_date") @db.Date
+  reserveClass        String?   @map("reserve_class") @db.VarChar(5)
+  note                String?
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @default(now()) @map("updated_at")
+
+  @@index([fullName], map: "idx_qndb_full_name")
+  @@map("quan_nhan_du_bi")
+}
+
+// ─── Website CMS ─────────────────────────────────────────────────────────────
+
+model WebsiteArticle {
+  id           Int      @id @default(autoincrement())
+  title        String   @db.VarChar(500)
+  slug         String?  @unique @db.VarChar(500)
+  content      String?
+  excerpt      String?
+  author       String?  @db.VarChar(200)
+  category     String   @db.VarChar(100)
+  thumbnailUrl String?  @map("thumbnail_url") @db.VarChar(500)
+  displayOrder Int      @default(0) @map("display_order")
+  isFeatured   Boolean  @default(false) @map("is_featured")
+  isVisible    Boolean  @default(true) @map("is_visible")
+  createdBy    Int?     @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  creator User? @relation("WebsiteArticleCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([category, isVisible, displayOrder], map: "idx_website_articles_category_visible_order")
+  @@map("website_articles")
+}
+
+model WebsiteDocument {
+  id           Int       @id @default(autoincrement())
+  title        String    @db.VarChar(500)
+  docNumber    String?   @map("doc_number") @db.VarChar(100)
+  issuedBy     String?   @map("issued_by") @db.VarChar(200)
+  issuedDate   DateTime? @map("issued_date") @db.Date
+  category     String    @db.VarChar(100)
+  fileUrl      String?   @map("file_url") @db.VarChar(500)
+  fileSize     String?   @map("file_size") @db.VarChar(50)
+  fileType     String    @default("PDF") @map("file_type") @db.VarChar(10)
+  status       String    @default("active") @db.VarChar(20)
+  displayOrder Int       @default(0) @map("display_order")
+  isVisible    Boolean   @default(true) @map("is_visible")
+  createdBy    Int?      @map("created_by")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @map("updated_at")
+
+  creator User? @relation("WebsiteDocumentCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([category, status, isVisible], map: "idx_website_documents_category_status_visible")
+  @@map("website_documents")
+}
+
+model WebsiteSlide {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(300)
+  description  String?
+  imageUrl     String?  @map("image_url") @db.VarChar(500)
+  displayOrder Int      @default(0) @map("display_order")
+  isFeatured   Boolean  @default(false) @map("is_featured")
+  isVisible    Boolean  @default(true) @map("is_visible")
+  createdBy    Int?     @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  creator User? @relation("WebsiteSlideCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([isVisible, displayOrder], map: "idx_website_slides_visible_order")
+  @@map("website_slides")
+}
+
+model WebsiteContact {
+  id        Int      @id @default(autoincrement())
+  fullName  String   @map("full_name") @db.VarChar(200)
+  phone     String?  @db.VarChar(20)
+  email     String?  @db.VarChar(200)
+  subject   String?  @db.VarChar(100)
+  message   String
+  status    String   @default("pending") @db.VarChar(20)
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("website_contacts")
+}
+
+model WebsiteQuickLink {
+  id           Int      @id @default(autoincrement())
+  title        String   @db.VarChar(300)
+  url          String?  @db.VarChar(500)
+  displayOrder Int      @default(0) @map("display_order")
+  isVisible    Boolean  @default(true) @map("is_visible")
+  createdBy    Int?     @map("created_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  creator User? @relation("WebsiteQuickLinkCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([isVisible, displayOrder], map: "idx_website_quick_links_visible_order")
+  @@map("website_quick_links")
+}
+
+// ─── Registrations ───────────────────────────────────────────────────────────
+
+model Registration {
+  id               Int      @id @default(autoincrement())
+  category         String   @db.VarChar(20)
+  fullName         String   @map("full_name") @db.VarChar(200)
+  phone            String   @db.VarChar(20)
+  address          String
+  dob              DateTime @db.Date
+  workplace        String   @db.VarChar(300)
+  guardianPhone    String   @map("guardian_phone") @db.VarChar(20)
+  status           String   @default("pending") @db.VarChar(20)
+  clientIp         String?  @map("client_ip") @db.VarChar(45)
+  trainingSystem   String?  @map("training_system") @db.VarChar(100)
+  temporaryAddress String?  @map("temporary_address")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @default(now()) @map("updated_at")
+
+  @@index([phone, createdAt(sort: Desc)], map: "idx_registrations_phone_created")
+  @@index([clientIp, createdAt(sort: Desc)], map: "idx_registrations_ip_created")
+  @@map("registrations")
+}
+
+model RegistrationTemplate {
+  id           Int      @id @default(autoincrement())
+  category     String   @db.VarChar(20)
+  name         String   @db.VarChar(300)
+  code         String   @db.VarChar(100)
+  fileType     String   @default("PDF") @map("file_type") @db.VarChar(10)
+  required     Boolean  @default(true)
+  description  String?
+  size         String?  @db.VarChar(50)
+  fileUrl      String   @map("file_url") @db.VarChar(500)
+  displayOrder Int      @default(0) @map("display_order")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+
+  @@index([category, isActive, displayOrder], map: "idx_registration_templates_category")
+  @@map("registration_templates")
+}
+
+// ─── Schedules ───────────────────────────────────────────────────────────────
+
+model ScheduleDay {
+  id              Int      @id @default(autoincrement())
+  date            DateTime @unique @db.Date
+  officeColumns   Json     @default("[]") @map("office_columns")
+  commander       String?
+  dutyOfficer     String?  @map("duty_officer")
+  documentOfficer String?  @map("document_officer")
+  internalAffairs String?  @map("internal_affairs")
+  mealDuty        String?  @map("meal_duty")
+  dqttLeader      String?  @map("dqtt_leader")
+  dqcdPatrol      Json?    @map("dqcd_patrol")
+  officeDuties    Json?    @map("office_duties")
+  createdBy       Int?     @map("created_by")
+  updatedAt       DateTime @default(now()) @map("updated_at")
+
+  @@map("schedule_days")
+}
+
+model UserScheduleTemplate {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  weekStart DateTime? @map("week_start") @db.Date
+  dayOfWeek Int       @map("day_of_week")
+  shift     String    @db.VarChar(20)
+  startTime DateTime? @map("start_time") @db.Time(6)
+  endTime   DateTime? @map("end_time") @db.Time(6)
+  note      String?
+  updatedAt DateTime  @default(now()) @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart, dayOfWeek, shift])
+  @@map("user_schedule_templates")
+}
+
+model DqcdMobilizeSummary {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @map("user_id")
+  weekStart     DateTime @map("week_start") @db.Date
+  mobilizeCount Int      @default(0) @map("mobilize_count")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, weekStart])
+  @@map("dqcd_mobilize_summary")
+}
+
+// ─── Knowledge base (pgvector) ───────────────────────────────────────────────
+//
+// model KnowledgeChunk {
+//   id        String                      @id
+//   source    String
+//   path      String?
+//   type      String?
+//   title     String?
+//   text      String
+//   metadata  Json                        @default("{}")
+//   embedding Unsupported("vector(1536)")
+//   indexedAt DateTime                    @default(now()) @map("indexed_at")
+//
+//   @@index([source], map: "idx_knowledge_chunks_source")
+//   @@map("knowledge_chunks")
+// }
