@@ -4,6 +4,7 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "postinstall": "node scripts/postinstall-prisma-package.js",
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "pdf:to-md": "node tool/pdf_to_markdown.js",
